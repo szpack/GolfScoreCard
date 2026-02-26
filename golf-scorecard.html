@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Golf Scorecard Overlay</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#1a1a2e; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; font-family:'Barlow Condensed',sans-serif; gap:28px; padding:40px; }
+  .demo-label { color:rgba(255,255,255,.3); font-size:11px; letter-spacing:3px; text-transform:uppercase; font-family:'Barlow',sans-serif; }
+  .scorecard { display:flex; align-items:stretch; height:80px; filter:drop-shadow(0 8px 32px rgba(0,0,0,.7)); animation:slideIn .5s cubic-bezier(.22,1,.36,1) forwards; }
+  @keyframes slideIn { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+  .hole-number { background:#00573F; width:76px; display:flex; flex-direction:column; align-items:center; justify-content:center; flex-shrink:0; }
+  .hole-label  { font-size:9px; letter-spacing:2.5px; color:rgba(255,255,255,.55); text-transform:uppercase; font-weight:600; line-height:1; margin-bottom:1px; }
+  .hole-num    { font-size:40px; font-weight:900; color:#fff; line-height:1; letter-spacing:-1px; }
+  .divider     { width:3px; background:#C9A84C; flex-shrink:0; }
+  .hole-info   { background:rgba(8,12,18,.97); display:flex; flex-direction:column; min-width:300px; }
+  .info-top    { display:flex; align-items:center; padding:10px 16px 8px; border-bottom:1px solid rgba(255,255,255,.06); flex:1; }
+  .par-block   { display:flex; flex-direction:column; align-items:flex-start; flex-shrink:0; }
+  .par-label   { font-size:8px; letter-spacing:2.5px; color:#C9A84C; text-transform:uppercase; font-weight:700; line-height:1; }
+  .par-value   { font-size:30px; font-weight:900; color:#fff; line-height:1.05; letter-spacing:-1px; }
+  .info-sep    { width:1px; height:32px; background:rgba(255,255,255,.1); margin:0 14px; flex-shrink:0; }
+  .yardage-block { display:flex; flex-direction:column; align-items:flex-start; flex-shrink:0; }
+  .yardage-label { font-size:8px; letter-spacing:2px; color:rgba(255,255,255,.4); text-transform:uppercase; font-weight:600; line-height:1; }
+  .yardage-value { font-size:24px; font-weight:800; color:rgba(255,255,255,.88); line-height:1.1; letter-spacing:-.5px; }
+  .yardage-unit  { font-size:10px; color:rgba(255,255,255,.35); font-weight:500; margin-left:2px; }
+  .status-area { margin-left:auto; display:flex; align-items:center; padding-left:14px; }
+  .status-tag  { display:flex; align-items:center; gap:7px; }
+  .status-dot  { width:5px; height:5px; border-radius:50%; flex-shrink:0; animation:pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.45;transform:scale(.65)} }
+  .status-text { font-size:13px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; white-space:nowrap; }
+  .status-dot.tee,      .status-text.tee      { color:#fff; }
+  .status-dot.tee                              { background:#fff; box-shadow:0 0 7px rgba(255,255,255,.7); }
+  .status-dot.approach, .status-text.approach  { color:#60a5fa; }
+  .status-dot.approach                         { background:#60a5fa; box-shadow:0 0 7px rgba(96,165,250,.7); }
+  .status-dot.chip,     .status-text.chip      { color:#f59e0b; }
+  .status-dot.chip                             { background:#f59e0b; box-shadow:0 0 7px rgba(245,158,11,.7); }
+  .status-dot.putt,     .status-text.putt      { color:#a78bfa; }
+  .status-dot.putt                             { background:#a78bfa; box-shadow:0 0 7px rgba(167,139,250,.7); }
+  .status-dot.birdie,   .status-text.birdie    { color:#f87171; }
+  .status-dot.birdie                           { background:#f87171; box-shadow:0 0 7px rgba(248,113,113,.7); }
+  .status-dot.eagle,    .status-text.eagle     { color:#fbbf24; }
+  .status-dot.eagle                            { background:#fbbf24; box-shadow:0 0 8px rgba(251,191,36,.9); }
+  .status-dot.ace,      .status-text.ace       { color:#fbbf24; }
+  .status-dot.ace                              { background:#fbbf24; box-shadow:0 0 10px rgba(251,191,36,1); }
+  .status-dot.par,      .status-text.par       { color:#60a5fa; }
+  .status-dot.par                              { background:#60a5fa; box-shadow:0 0 7px rgba(96,165,250,.7); }
+  .status-dot.bogey,    .status-text.bogey     { color:#9ca3af; }
+  .status-dot.bogey                            { background:#9ca3af; box-shadow:0 0 5px rgba(156,163,175,.5); }
+  .status-dot.bogey2,   .status-text.bogey2    { color:#6b7280; }
+  .status-dot.bogey2                           { background:#6b7280; box-shadow:0 0 5px rgba(107,114,128,.4); }
+  .shot-tracker { display:flex; align-items:center; padding:0 12px; gap:5px; height:26px; background:rgba(0,0,0,.35); }
+  .shot-label   { font-size:7.5px; letter-spacing:2px; color:rgba(255,255,255,.28); text-transform:uppercase; font-weight:600; margin-right:5px; white-space:nowrap; }
+  .shot-dot     { width:26px; height:15px; border-radius:2px; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:800; transition:all .25s; }
+  .shot-dot.empty   { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.09); color:rgba(255,255,255,.12); }
+  .shot-dot.past    { background:rgba(255,255,255,.12); color:rgba(255,255,255,.45); }
+  .shot-dot.current { background:#C9A84C; color:#000; box-shadow:0 0 10px rgba(201,168,76,.55); }
+  .controls { display:flex; gap:16px; flex-wrap:wrap; justify-content:center; max-width:780px; }
+  .ctrl-group { display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .ctrl-label { color:rgba(255,255,255,.35); font-size:9.5px; letter-spacing:2px; text-transform:uppercase; font-family:'Barlow',sans-serif; }
+  .ctrl-row   { display:flex; gap:5px; align-items:center; }
+  button { background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.11); color:#fff; padding:7px 13px; border-radius:3px; font-family:'Barlow Condensed',sans-serif; font-size:13px; font-weight:600; letter-spacing:.5px; cursor:pointer; transition:all .15s; -webkit-tap-highlight-color:transparent; }
+  button:hover  { background:rgba(255,255,255,.14); }
+  button.active { background:#00573F; border-color:#00573F; }
+  .input-ctrl { background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.11); color:#fff; padding:7px 8px; border-radius:3px; font-family:'Barlow Condensed',sans-serif; font-size:14px; font-weight:700; width:70px; text-align:center; }
+  .check-ctrl { display:flex; flex-direction:column; align-items:center; }
+  .check-row  { display:flex; align-items:center; gap:9px; cursor:pointer; user-select:none; padding:6px 10px; border-radius:5px; transition:background .15s; -webkit-tap-highlight-color:transparent; }
+  .check-row:hover { background:rgba(255,255,255,.07); }
+  .custom-check { width:20px; height:20px; min-width:20px; border:2px solid rgba(255,255,255,.3); border-radius:4px; background:rgba(255,255,255,.05); display:flex; align-items:center; justify-content:center; transition:all .15s; pointer-events:none; }
+  .check-row:hover .custom-check { border-color:rgba(255,255,255,.55); }
+  .custom-check svg { display:none; width:11px; height:11px; }
+  .check-row.on .custom-check { background:#C9A84C; border-color:#C9A84C; }
+  .check-row.on .custom-check svg { display:block; }
+  .check-row.on .check-label { color:rgba(255,255,255,.9); }
+  .check-label { color:rgba(255,255,255,.45); font-size:11px; letter-spacing:1.5px; text-transform:uppercase; font-family:'Barlow',sans-serif; white-space:nowrap; transition:color .15s; }
+  .auto-badge  { font-size:9px; padding:2px 7px; border-radius:10px; background:rgba(201,168,76,.2); border:1px solid rgba(201,168,76,.4); color:#C9A84C; letter-spacing:1px; font-family:'Barlow',sans-serif; transition:opacity .2s; }
+  .ctrl-body { overflow:hidden; max-height:0; opacity:0; transition:max-height .25s ease, opacity .2s ease; width:100%; display:flex; justify-content:center; }
+  .ctrl-body.open { max-height:160px; opacity:1; padding-top:8px; }
+  .status-btns { display:flex; gap:5px; flex-wrap:wrap; justify-content:center; max-width:440px; }
+  .status-btn  { font-size:11px; padding:5px 11px; letter-spacing:.8px; }
+  .status-btn.sel-tee      { background:rgba(255,255,255,.18);  border-color:rgba(255,255,255,.5); color:#fff; }
+  .status-btn.sel-approach { background:rgba(96,165,250,.2);    border-color:#60a5fa; color:#60a5fa; }
+  .status-btn.sel-chip     { background:rgba(245,158,11,.18);   border-color:#f59e0b; color:#f59e0b; }
+  .status-btn.sel-putt     { background:rgba(167,139,250,.2);   border-color:#a78bfa; color:#a78bfa; }
+  .status-btn.sel-birdie   { background:rgba(248,113,113,.2);   border-color:#f87171; color:#f87171; }
+  .status-btn.sel-eagle    { background:rgba(251,191,36,.2);    border-color:#fbbf24; color:#fbbf24; }
+  .status-btn.sel-ace      { background:rgba(251,191,36,.25);   border-color:#fbbf24; color:#fbbf24; }
+  .status-btn.sel-par      { background:rgba(96,165,250,.18);   border-color:#60a5fa; color:#60a5fa; }
+  .status-btn.sel-bogey    { background:rgba(156,163,175,.15);  border-color:#9ca3af; color:#9ca3af; }
+  .status-btn.sel-bogey2   { background:rgba(107,114,128,.15);  border-color:#6b7280; color:#6b7280; }
+  .snap-wrap   { display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .snap-format { display:flex; gap:6px; align-items:center; }
+  .snap-format label  { color:rgba(255,255,255,.35); font-size:10px; letter-spacing:1.5px; font-family:'Barlow',sans-serif; }
+  .snap-format button { font-size:10px; padding:4px 10px; border-radius:3px; letter-spacing:1px; }
+  .snap-format button.active { background:#C9A84C; border-color:#C9A84C; color:#000; font-weight:800; }
+  .snap-btn { display:flex; align-items:center; gap:10px; background:linear-gradient(135deg,#C9A84C,#e8c96a,#C9A84C); border:none; color:#1a1200; padding:11px 28px; border-radius:4px; font-family:'Barlow Condensed',sans-serif; font-size:15px; font-weight:800; letter-spacing:2px; text-transform:uppercase; cursor:pointer; transition:all .2s; box-shadow:0 4px 20px rgba(201,168,76,.35); -webkit-tap-highlight-color:transparent; }
+  .snap-btn:hover   { transform:translateY(-1px); box-shadow:0 6px 28px rgba(201,168,76,.5); }
+  .snap-btn svg     { width:16px; height:16px; flex-shrink:0; }
+  .snap-btn:disabled{ opacity:.5; cursor:default; transform:none; }
+  .snap-feedback { font-size:11px; letter-spacing:1.5px; opacity:0; color:rgba(255,255,255,.55); font-family:'Barlow',sans-serif; transition:opacity .3s; height:16px; text-align:center; max-width:480px; }
+  .snap-feedback.show { opacity:1; }
+  .section-title { color:rgba(255,255,255,.15); font-size:9px; letter-spacing:4px; text-transform:uppercase; font-family:'Barlow',sans-serif; }
+  .variants      { display:flex; gap:14px; flex-wrap:wrap; justify-content:center; align-items:flex-start; }
+  .variant-label { color:rgba(255,255,255,.25); font-size:8.5px; letter-spacing:2px; text-align:center; margin-bottom:5px; font-family:'Barlow',sans-serif; }
+</style>
+</head>
+<body>
+
+<div class="demo-label">PGA Tour Style · Golf Vlog Overlay</div>
+
+<div id="mainCard" class="scorecard">
+  <div class="hole-number">
+    <div class="hole-label">HOLE</div>
+    <div class="hole-num" id="holeNum">7</div>
+  </div>
+  <div class="divider"></div>
+  <div class="hole-info">
+    <div class="info-top">
+      <div class="par-block">
+        <div class="par-label">PAR</div>
+        <div class="par-value" id="parVal">4</div>
+      </div>
+      <div class="info-sep" id="infoSep"></div>
+      <div class="yardage-block" id="yardageBlock">
+        <div class="yardage-label" id="distLabel">HOLE</div>
+        <div class="yardage-value" id="yardsVal">385<span class="yardage-unit">YDS</span></div>
+      </div>
+      <div class="status-area" id="statusArea">
+        <div class="status-tag">
+          <div class="status-dot tee" id="statusDot"></div>
+          <div class="status-text tee" id="statusText">TEE SHOT</div>
+        </div>
+      </div>
+    </div>
+    <div class="shot-tracker" id="shotTracker"></div>
+  </div>
+</div>
+
+<div class="controls">
+  <div class="ctrl-group">
+    <div class="ctrl-label">洞号 Hole</div>
+    <div class="ctrl-row">
+      <button onclick="changeHole(-1)">－</button>
+      <input class="input-ctrl" id="holeInput" type="number" value="7" min="1" max="18" oninput="setHole(this.value)">
+      <button onclick="changeHole(1)">＋</button>
+    </div>
+  </div>
+  <div class="ctrl-group">
+    <div class="ctrl-label">标准杆 Par</div>
+    <div class="ctrl-row">
+      <button onclick="setPar(3,this)">Par 3</button>
+      <button onclick="setPar(4,this)" class="active">Par 4</button>
+      <button onclick="setPar(5,this)">Par 5</button>
+    </div>
+  </div>
+  <div class="ctrl-group">
+    <div class="ctrl-label">杆数 Shot</div>
+    <div class="ctrl-row">
+      <button onclick="changeShot(-1)">－</button>
+      <input class="input-ctrl" id="shotInput" type="number" value="1" min="1" max="12" oninput="setShot(this.value)">
+      <button onclick="changeShot(1)">＋</button>
+    </div>
+  </div>
+  <div class="check-ctrl">
+    <div class="check-row on" id="rowDist" onclick="toggleDist()">
+      <span class="custom-check">
+        <svg viewBox="0 0 10 8" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 4,7 9,1"/></svg>
+      </span>
+      <span class="check-label">距旗杆 To Pin</span>
+    </div>
+    <div class="ctrl-body open" id="bodyDist">
+      <div class="ctrl-row">
+        <button onclick="changeYards(-10)">－</button>
+        <input class="input-ctrl" id="yardsInput" type="number" value="385" min="0" max="700" style="width:78px" oninput="setYards(this.value)">
+        <button onclick="changeYards(10)">＋</button>
+      </div>
+    </div>
+  </div>
+  <div class="check-ctrl">
+    <div class="check-row on" id="rowStatus" onclick="toggleStatus()">
+      <span class="custom-check">
+        <svg viewBox="0 0 10 8" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 4,7 9,1"/></svg>
+      </span>
+      <span class="check-label">击球状态 Status</span>
+      <span class="auto-badge" id="autoBadge">AUTO</span>
+    </div>
+    <div class="ctrl-body open" id="bodyStatus">
+      <div class="status-btns" id="statusBtns">
+        <button class="status-btn" onclick="manualStatus(event,'tee','TEE SHOT',this)">🏌 开球</button>
+        <button class="status-btn" onclick="manualStatus(event,'approach','APPROACH',this)">🎯 上果岭</button>
+        <button class="status-btn" onclick="manualStatus(event,'chip','CHIP',this)">⛳ 切球</button>
+        <button class="status-btn" onclick="manualStatus(event,'putt','PUTTING',this)">🟣 推杆</button>
+        <button class="status-btn" onclick="manualStatus(event,'birdie','BIRDIE',this)">🐦 小鸟球</button>
+        <button class="status-btn" onclick="manualStatus(event,'eagle','EAGLE',this)">🦅 老鹰球</button>
+        <button class="status-btn" onclick="manualStatus(event,'ace','HOLE IN ONE',this)">⭐ 一杆进洞</button>
+        <button class="status-btn" onclick="manualStatus(event,'par','PAR',this)">🔵 帕</button>
+        <button class="status-btn" onclick="manualStatus(event,'bogey','BOGEY',this)">⬜ 柏忌</button>
+        <button class="status-btn" onclick="manualStatus(event,'bogey2','DOUBLE BOGEY',this)">⬛ 双柏忌</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="snap-wrap">
+  <div class="snap-format">
+    <label>背景</label>
+    <button class="active" onclick="setFormat('transparent',this)">透明 PNG</button>
+    <button onclick="setFormat('black',this)">黑底 PNG</button>
+  </div>
+  <button class="snap-btn" id="snapBtn" onclick="takeSnapshot()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+      <circle cx="12" cy="13" r="4"/>
+    </svg>
+    导出字幕图片
+  </button>
+  <div class="snap-feedback" id="snapFeedback"></div>
+</div>
+
+<div class="section-title">— Preview Examples —</div>
+<div class="variants" id="variants"></div>
+
+<script>
+const parDefaults = { 3:165, 4:385, 5:520 };
+const STATUS_COLORS = { tee:'#ffffff', approach:'#60a5fa', chip:'#f59e0b', putt:'#a78bfa', birdie:'#f87171', eagle:'#fbbf24', ace:'#fbbf24', par:'#60a5fa', bogey:'#9ca3af', bogey2:'#6b7280' };
+
+let state = { hole:7, par:4, holeYards:385, toPin:385, currentShot:1, status:'tee', statusLabel:'TEE SHOT', showDist:true, showStatus:true, manualOverride:false };
+let snapFormat = 'transparent';
+
+// Auto status inference
+function autoStatusFor(par, shot) {
+  if (shot === 1) return { status:'tee', label:'TEE SHOT' };
+  const diff = shot - par;
+  if (diff <= -2) return { status:'eagle',  label:'EAGLE' };
+  if (diff === -1) return { status:'birdie', label:'BIRDIE' };
+  if (diff === 0)  return { status:'par',    label:'PAR' };
+  if (diff === 1)  return { status:'bogey',  label:'BOGEY' };
+  if (diff === 2)  return { status:'bogey2', label:'DOUBLE BOGEY' };
+  if (diff >= 3)   return { status:'bogey2', label:'+' + diff + ' BOGEY' };
+  // In-progress shots (shot < par)
+  if (par === 3)                   return { status:'putt',     label:'PUTTING' };
+  if (par === 4 && shot === 2)     return { status:'approach', label:'APPROACH' };
+  if (par === 4 && shot === 3)     return { status:'putt',     label:'PUTTING' };
+  if (par === 5 && shot === 2)     return { status:'approach', label:'APPROACH' };
+  if (par === 5 && shot === 3)     return { status:'chip',     label:'CHIP' };
+  if (par === 5 && shot === 4)     return { status:'putt',     label:'PUTTING' };
+  return { status:'tee', label:'TEE SHOT' };
+}
+
+function toggleDist() {
+  state.showDist = !state.showDist;
+  document.getElementById('rowDist').classList.toggle('on', state.showDist);
+  document.getElementById('bodyDist').classList.toggle('open', state.showDist);
+  update();
+}
+
+function toggleStatus() {
+  state.showStatus = !state.showStatus;
+  document.getElementById('rowStatus').classList.toggle('on', state.showStatus);
+  document.getElementById('bodyStatus').classList.toggle('open', state.showStatus);
+  update();
+}
+
+function manualStatus(e, cls, label, btn) {
+  e.stopPropagation();
+  state.status = cls; state.statusLabel = label; state.manualOverride = true;
+  document.querySelectorAll('.status-btn').forEach(b => b.className = 'status-btn');
+  btn.classList.add('sel-' + cls);
+  document.getElementById('autoBadge').style.opacity = '0.3';
+  renderStatusEl();
+}
+
+function applyAutoStatus() {
+  if (state.manualOverride) return;
+  const a = autoStatusFor(state.par, state.currentShot);
+  state.status = a.status; state.statusLabel = a.label;
+  document.querySelectorAll('.status-btn').forEach(b => {
+    b.className = 'status-btn';
+    const oc = b.getAttribute('onclick') || '';
+    if (oc.includes("'" + a.status + "'")) b.classList.add('sel-' + a.status);
+  });
+  document.getElementById('autoBadge').style.opacity = '1';
+}
+
+function renderStatusEl() {
+  document.getElementById('statusDot').className  = 'status-dot '  + state.status;
+  document.getElementById('statusText').className = 'status-text ' + state.status;
+  document.getElementById('statusText').textContent = state.statusLabel;
+}
+
+function renderShots() {
+  const tracker = document.getElementById('shotTracker');
+  const max = Math.max(state.par, state.currentShot);
+  let html = '<div class="shot-label">SHOT</div>';
+  for (let i = 1; i <= max; i++) {
+    const cls = i < state.currentShot ? 'past' : i === state.currentShot ? 'current' : 'empty';
+    html += '<div class="shot-dot ' + cls + '">' + i + '</div>';
+  }
+  tracker.innerHTML = html;
+}
+
+function update() {
+  document.getElementById('holeNum').textContent  = state.hole;
+  document.getElementById('parVal').textContent   = state.par;
+  document.getElementById('holeInput').value      = state.hole;
+  document.getElementById('shotInput').value      = state.currentShot;
+  document.getElementById('yardsInput').value     = state.toPin;
+  document.getElementById('distLabel').textContent = state.currentShot === 1 ? 'HOLE' : 'TO PIN';
+  document.getElementById('yardsVal').innerHTML    = state.toPin + '<span class="yardage-unit">YDS</span>';
+  document.getElementById('infoSep').style.display       = state.showDist   ? '' : 'none';
+  document.getElementById('yardageBlock').style.display  = state.showDist   ? '' : 'none';
+  document.getElementById('statusArea').style.display    = state.showStatus ? '' : 'none';
+  applyAutoStatus();
+  renderStatusEl();
+  renderShots();
+  renderVariants();
+}
+
+function changeHole(d)  { state.hole  = Math.max(1,Math.min(18,state.hole+d)); update(); }
+function setHole(v)     { state.hole  = Math.max(1,Math.min(18,parseInt(v)||1)); update(); }
+function changeYards(d) { state.toPin = Math.max(0,Math.min(700,state.toPin+d)); update(); }
+function setYards(v)    { state.toPin = Math.max(0,Math.min(700,parseInt(v)||0)); update(); }
+
+function setPar(p, btn) {
+  state.par = p; state.holeYards = parDefaults[p]; state.toPin = state.holeYards; state.manualOverride = false;
+  document.querySelectorAll('button').forEach(b => { if(['Par 3','Par 4','Par 5'].includes(b.textContent)) b.classList.remove('active'); });
+  btn.classList.add('active');
+  update();
+}
+
+function changeShot(d) { state.currentShot = Math.max(1,Math.min(12,state.currentShot+d)); if(state.currentShot===1) state.toPin=state.holeYards; state.manualOverride=false; update(); }
+function setShot(v)    { state.currentShot = Math.max(1,Math.min(12,parseInt(v)||1)); state.manualOverride=false; update(); }
+function setFormat(fmt, btn) { snapFormat=fmt; document.querySelectorAll('.snap-format button').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); }
+
+const variantExamples = [
+  { hole:3,  par:3, toPin:165, shot:1, caption:'Par 3 · 开球' },
+  { hole:7,  par:4, toPin:138, shot:2, caption:'Par 4 · 上果岭 (Auto)' },
+  { hole:12, par:5, toPin:18,  shot:4, caption:'Par 5 · 推杆 (Auto)' },
+  { hole:18, par:4, toPin:0,   shot:3, caption:'Par 4 · 小鸟球 (Auto)' },
+];
+
+function renderVariants() {
+  document.getElementById('variants').innerHTML = variantExamples.map(function(ex) {
+    const auto = autoStatusFor(ex.par, ex.shot);
+    const max  = Math.max(ex.par, ex.shot);
+    let dots = '';
+    for (let i=1;i<=max;i++) {
+      const cls = i<ex.shot?'past':i===ex.shot?'current':'empty';
+      dots += '<div class="shot-dot '+cls+'" style="width:22px;height:13px;font-size:9.5px;">'+i+'</div>';
+    }
+    const dl = ex.shot===1?'HOLE':'TO PIN';
+    return '<div><div class="variant-label">'+ex.caption+'</div><div class="scorecard" style="height:68px;animation:none;"><div class="hole-number" style="width:62px;"><div class="hole-label" style="font-size:7.5px;">HOLE</div><div class="hole-num" style="font-size:32px;">'+ex.hole+'</div></div><div class="divider"></div><div class="hole-info" style="min-width:260px;"><div class="info-top" style="padding:8px 12px 6px;"><div class="par-block"><div class="par-label" style="font-size:7px;">PAR</div><div class="par-value" style="font-size:24px;">'+ex.par+'</div></div><div class="info-sep" style="height:26px;margin:0 10px;"></div><div class="yardage-block"><div class="yardage-label" style="font-size:7px;">'+dl+'</div><div class="yardage-value" style="font-size:20px;">'+ex.toPin+'<span class="yardage-unit" style="font-size:8px;">YDS</span></div></div><div class="status-area" style="padding-left:10px;"><div class="status-tag"><div class="status-dot '+auto.status+'" style="width:4px;height:4px;animation:none;"></div><div class="status-text '+auto.status+'" style="font-size:11px;letter-spacing:1px;">'+auto.label+'</div></div></div></div><div class="shot-tracker" style="height:22px;gap:4px;padding:0 10px;"><div class="shot-label" style="font-size:7px;">SHOT</div>'+dots+'</div></div></div></div>';
+  }).join('');
+}
+
+function takeSnapshot() {
+  const SCALE=2,W=400,H=88,LEFT_W=66,DIV_W=3,RIGHT_X=69,RIGHT_W=331,TOP_H=60,BOT_H=28;
+  const canvas=document.createElement('canvas');
+  canvas.width=W*SCALE; canvas.height=H*SCALE;
+  const ctx=canvas.getContext('2d');
+  ctx.scale(SCALE,SCALE);
+  if(snapFormat==='black'){ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);}
+  // Green
+  ctx.fillStyle='#00573F'; ctx.fillRect(0,0,LEFT_W,H);
+  ctx.fillStyle='rgba(255,255,255,.55)'; ctx.font='600 6.5px "Barlow Condensed",sans-serif'; ctx.letterSpacing='2px'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('HOLE',LEFT_W/2,20);
+  ctx.fillStyle='#fff'; ctx.font='900 34px "Barlow Condensed",sans-serif'; ctx.letterSpacing='-1px';
+  ctx.fillText(String(state.hole),LEFT_W/2,47);
+  // Divider
+  ctx.fillStyle='#C9A84C'; ctx.fillRect(LEFT_W,0,DIV_W,H);
+  // Right
+  ctx.fillStyle='rgba(8,12,18,.97)'; ctx.fillRect(RIGHT_X,0,RIGHT_W,H);
+  ctx.fillStyle='rgba(255,255,255,.06)'; ctx.fillRect(RIGHT_X,TOP_H,RIGHT_W,1);
+  ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(RIGHT_X,TOP_H+1,RIGHT_W,BOT_H-1);
+  // PAR
+  const pX=RIGHT_X+14;
+  ctx.letterSpacing='2px'; ctx.fillStyle='#C9A84C'; ctx.font='700 6.5px "Barlow Condensed",sans-serif'; ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.fillText('PAR',pX,14);
+  ctx.letterSpacing='-1px'; ctx.fillStyle='#fff'; ctx.font='900 26px "Barlow Condensed",sans-serif';
+  ctx.fillText(String(state.par),pX,39);
+  // Distance
+  if(state.showDist){
+    ctx.fillStyle='rgba(255,255,255,.1)'; ctx.fillRect(pX+32,10,1,30);
+    const yX=pX+44; const dl=state.currentShot===1?'HOLE':'TO PIN';
+    ctx.letterSpacing='2px'; ctx.fillStyle='rgba(255,255,255,.4)'; ctx.font='600 6.5px "Barlow Condensed",sans-serif'; ctx.textAlign='left';
+    ctx.fillText(dl,yX,14);
+    ctx.letterSpacing='-.5px'; ctx.fillStyle='rgba(255,255,255,.88)'; ctx.font='800 20px "Barlow Condensed",sans-serif';
+    ctx.fillText(String(state.toPin),yX,39);
+    const yw=ctx.measureText(String(state.toPin)).width;
+    ctx.letterSpacing='0px'; ctx.fillStyle='rgba(255,255,255,.35)'; ctx.font='500 8px "Barlow Condensed",sans-serif';
+    ctx.fillText('YDS',yX+yw+3,39);
+  }
+  // Status
+  if(state.showStatus){
+    const col=STATUS_COLORS[state.status]||'#fff';
+    ctx.font='700 11px "Barlow Condensed",sans-serif'; ctx.letterSpacing='1.5px';
+    const sw=ctx.measureText(state.statusLabel).width;
+    const dr=2.5, tw=dr*2+6+sw, sx=RIGHT_X+RIGHT_W-12-tw;
+    ctx.beginPath(); ctx.arc(sx+dr,TOP_H/2,dr,0,Math.PI*2); ctx.fillStyle=col; ctx.fill();
+    ctx.fillStyle=col; ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.fillText(state.statusLabel,sx+dr*2+6,TOP_H/2);
+  }
+  // Shot dots
+  const max=Math.max(state.par,state.currentShot);
+  const dW=22,dH=13,dG=4; let sx=RIGHT_X+11+34; const sy=TOP_H+1+(BOT_H-dH)/2;
+  ctx.letterSpacing='2px'; ctx.fillStyle='rgba(255,255,255,.28)'; ctx.font='600 6.5px "Barlow Condensed",sans-serif'; ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.fillText('SHOT',RIGHT_X+11,TOP_H+BOT_H/2);
+  for(let i=1;i<=max;i++){
+    const iC=i===state.currentShot,iP=i<state.currentShot,r=2;
+    ctx.beginPath(); ctx.moveTo(sx+r,sy); ctx.lineTo(sx+dW-r,sy); ctx.quadraticCurveTo(sx+dW,sy,sx+dW,sy+r); ctx.lineTo(sx+dW,sy+dH-r); ctx.quadraticCurveTo(sx+dW,sy+dH,sx+dW-r,sy+dH); ctx.lineTo(sx+r,sy+dH); ctx.quadraticCurveTo(sx,sy+dH,sx,sy+dH-r); ctx.lineTo(sx,sy+r); ctx.quadraticCurveTo(sx,sy,sx+r,sy); ctx.closePath();
+    if(iC){ctx.fillStyle='#C9A84C';}else if(iP){ctx.fillStyle='rgba(255,255,255,.12)';}else{ctx.fillStyle='rgba(255,255,255,.05)';ctx.strokeStyle='rgba(255,255,255,.09)';ctx.lineWidth=1;ctx.stroke();}
+    ctx.fill();
+    ctx.letterSpacing='0px'; ctx.font='800 8.5px "Barlow Condensed",sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle=iC?'#000':iP?'rgba(255,255,255,.45)':'rgba(255,255,255,.12)';
+    ctx.fillText(String(i),sx+dW/2,sy+dH/2+.5);
+    sx+=dW+dG;
+  }
+  const ss=state.showStatus?'_'+state.statusLabel.replace(/[^a-zA-Z0-9]/g,'').toUpperCase():'';
+  const ys=state.showDist?'_'+state.toPin+'yds':'';
+  const fn='Hole'+String(state.hole).padStart(2,'0')+'_Par'+state.par+'_Shot'+state.currentShot+ss+ys+'.png';
+  const lnk=document.createElement('a'); lnk.download=fn; lnk.href=canvas.toDataURL('image/png'); lnk.click();
+  const fb=document.getElementById('snapFeedback'); fb.textContent='✓  '+fn; fb.classList.add('show');
+  const sb=document.getElementById('snapBtn'); sb.disabled=true;
+  setTimeout(function(){fb.classList.remove('show');sb.disabled=false;},3500);
+}
+
+renderVariants();
+update();
+</script>
+</body>
+</html>
