@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Golf Overlay Generator v3</title>
+<style>
+/* ═══════════════════════════════════════════
+   DESIGN TOKENS
+═══════════════════════════════════════════ */
+:root {
+  --green:   #00573F;
+  --gold:    #C9A84C;
+  --gold2:   #e8c96a;
+  --bg:      #0a0e16;
+  --panel:   #141920;
+  --panel2:  #1c2330;
+  --border:  rgba(255,255,255,.08);
+  --text:    rgba(255,255,255,.88);
+  --muted:   rgba(255,255,255,.38);
+  --c-tee:   #ffffff;
+  --c-app:   #60a5fa;
+  --c-chip:  #f59e0b;
+  --c-putt:  #a78bfa;
+  --c-ace:   #fbbf24;
+  --c-eagle: #fbbf24;
+  --c-bird:  #f87171;
+  --c-par:   #60a5fa;
+  --c-bog:   #9ca3af;
+  --c-dbl:   #6b7280;
+  --f: 'Barlow Condensed','Arial Narrow',Arial,sans-serif;
+  --fb: 'Barlow',Arial,sans-serif;
+  --r: 4px;
+}
+*,*::before,*::after { margin:0; padding:0; box-sizing:border-box; }
+html { height:100%; }
+body {
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--fb);
+  font-size:14px;
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  overflow-x:hidden;
+}
+button { font-family:var(--f); cursor:pointer; border:none; outline:none; -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
+input,select { font-family:var(--f); outline:none; -webkit-tap-highlight-color:transparent; }
+input[type=number] { -moz-appearance:textfield; }
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; }
+
+/* ═══════════════════════════════════════════
+   LAYOUT
+═══════════════════════════════════════════ */
+.app { display:flex; flex-direction:column; min-height:100vh; }
+
+/* ── Header ── */
+.hdr {
+  background:var(--panel);
+  border-bottom:1px solid var(--border);
+  padding:8px 16px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  flex-shrink:0;
+}
+.hdr-brand { display:flex; flex-direction:column; gap:1px; margin-right:4px; }
+.hdr-title { font-family:var(--f); font-size:15px; font-weight:800; letter-spacing:3px; text-transform:uppercase; color:var(--gold); }
+.hdr-sub { font-size:9px; color:var(--muted); letter-spacing:1.5px; text-transform:uppercase; }
+.hdr-tools { display:flex; align-items:center; gap:6px; flex-wrap:wrap; flex:1; justify-content:flex-end; }
+
+/* small toolbar buttons */
+.tb { height:28px; padding:0 10px; border-radius:3px; border:1px solid var(--border); background:rgba(255,255,255,.05); color:var(--muted); font-size:10px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; transition:all .15s; white-space:nowrap; }
+.tb:hover { background:rgba(255,255,255,.1); color:var(--text); }
+.tb.on { background:rgba(201,168,76,.18); border-color:var(--gold); color:var(--gold); }
+.tb.danger { border-color:rgba(248,113,113,.3); color:rgba(248,113,113,.7); }
+.tb.danger:hover { background:rgba(248,113,113,.1); color:#f87171; }
+
+/* ── Preview ── */
+.preview-wrap {
+  flex:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:#07090f;
+  position:relative;
+  overflow:hidden;
+  min-height:200px;
+}
+.preview-canvas-wrap {
+  position:relative;
+  /* sized by JS based on aspect ratio */
+  flex-shrink:0;
+}
+#previewCanvas {
+  display:block;
+  width:100%;
+  height:100%;
+  cursor:default;
+}
+#previewCanvas.dragging { cursor:grabbing; }
+#previewCanvas.canpan { cursor:grab; }
+
+/* ref image controls overlay */
+.ref-controls {
+  position:absolute;
+  top:8px; left:8px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap;
+  pointer-events:all;
+  opacity:0;
+  transition:opacity .2s;
+}
+.preview-canvas-wrap:hover .ref-controls,
+.ref-controls.always-show { opacity:1; }
+.ref-ctrl-chip {
+  background:rgba(0,0,0,.6);
+  border:1px solid rgba(255,255,255,.15);
+  border-radius:4px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:4px 8px;
+  font-size:10px;
+  color:rgba(255,255,255,.7);
+  font-family:var(--f);
+  white-space:nowrap;
+}
+.ref-ctrl-chip input[type=range] {
+  width:70px;
+  height:3px;
+  accent-color:var(--gold);
+}
+.ref-ctrl-chip button {
+  background:transparent;
+  color:rgba(255,255,255,.6);
+  font-size:11px;
+  padding:0 3px;
+  border-radius:3px;
+  border:none;
+}
+.ref-ctrl-chip button:hover { color:#fff; }
+
+/* safe zone toggle (on canvas) */
+.preview-corner-tools {
+  position:absolute;
+  bottom:6px;
+  right:8px;
+  display:flex;
+  gap:5px;
+  pointer-events:all;
+}
+
+/* ── Control Panel ── */
+.ctrl {
+  flex-shrink:0;
+  background:var(--panel);
+  border-top:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  gap:0;
+}
+
+/* section */
+.ctrl-sec {
+  padding:10px 14px 11px;
+  border-bottom:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.ctrl-sec:last-child { border-bottom:none; }
+.sec-label {
+  font-size:8px;
+  letter-spacing:3px;
+  text-transform:uppercase;
+  color:var(--muted);
+  font-family:var(--f);
+  font-weight:600;
+}
+.row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+
+/* ── Number spinner ── */
+.spinner { display:flex; align-items:center; gap:4px; }
+.sp-btn {
+  width:40px; height:40px;
+  background:var(--panel2);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  color:var(--text);
+  font-size:22px;
+  font-weight:300;
+  display:flex; align-items:center; justify-content:center;
+  transition:all .12s;
+  flex-shrink:0;
+}
+.sp-btn:hover { background:rgba(255,255,255,.1); }
+.sp-btn:active { transform:scale(.93); background:rgba(255,255,255,.15); }
+.sp-val {
+  width:56px; height:40px;
+  background:var(--panel2);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  color:var(--text);
+  text-align:center;
+  font-family:var(--f);
+  font-size:22px;
+  font-weight:800;
+}
+.sp-val:focus { border-color:var(--gold); }
+.sp-unit { font-size:10px; color:var(--muted); letter-spacing:1px; font-family:var(--f); }
+
+/* ── Par / big option buttons ── */
+.opt-btns { display:flex; gap:5px; }
+.opt-btn {
+  flex:1;
+  min-width:52px;
+  height:40px;
+  background:var(--panel2);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  color:rgba(255,255,255,.55);
+  font-size:15px;
+  font-weight:700;
+  letter-spacing:.5px;
+  transition:all .12s;
+}
+.opt-btn:hover { background:rgba(255,255,255,.1); color:var(--text); }
+.opt-btn:active { transform:scale(.95); }
+.opt-btn.on { background:var(--green); border-color:var(--green); color:#fff; }
+
+/* ── Shot type pills ── */
+.st-pills { display:flex; gap:5px; flex-wrap:wrap; }
+.st-pill {
+  flex:1;
+  min-width:64px;
+  height:38px;
+  background:var(--panel2);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  color:rgba(255,255,255,.5);
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.8px;
+  text-transform:uppercase;
+  transition:all .12s;
+  display:flex; align-items:center; justify-content:center; gap:4px;
+}
+.st-pill:hover { background:rgba(255,255,255,.1); color:var(--text); }
+.st-pill:active { transform:scale(.95); }
+.st-pill.on-TEE { background:rgba(255,255,255,.16); border-color:rgba(255,255,255,.45); color:#fff; }
+.st-pill.on-APPROACH { background:rgba(96,165,250,.18); border-color:#60a5fa; color:#60a5fa; }
+.st-pill.on-CHIP { background:rgba(245,158,11,.16); border-color:#f59e0b; color:#f59e0b; }
+.st-pill.on-PUTT { background:rgba(167,139,250,.18); border-color:#a78bfa; color:#a78bfa; }
+.auto-tag { font-size:8px; padding:1px 5px; border-radius:8px; background:rgba(201,168,76,.15); border:1px solid rgba(201,168,76,.3); color:var(--gold); letter-spacing:1px; font-family:var(--f); transition:opacity .2s; }
+
+/* ── Result pills ── */
+.res-pills { display:flex; gap:4px; flex-wrap:wrap; }
+.res-pill {
+  min-width:44px;
+  height:34px;
+  padding:0 10px;
+  background:var(--panel2);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  color:rgba(255,255,255,.45);
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:.8px;
+  text-transform:uppercase;
+  transition:all .12s;
+}
+.res-pill:hover { background:rgba(255,255,255,.1); color:var(--text); }
+.res-pill:active { transform:scale(.95); }
+.res-pill.on-ace,.res-pill.on-eagle { background:rgba(251,191,36,.18); border-color:#fbbf24; color:#fbbf24; }
+.res-pill.on-birdie { background:rgba(248,113,113,.18); border-color:#f87171; color:#f87171; }
+.res-pill.on-par { background:rgba(96,165,250,.16); border-color:#60a5fa; color:#60a5fa; }
+.res-pill.on-bogey { background:rgba(156,163,175,.13); border-color:#9ca3af; color:#9ca3af; }
+.res-pill.on-double,.res-pill.on-worse { background:rgba(107,114,128,.13); border-color:#6b7280; color:#6b7280; }
+
+/* ── Action buttons ── */
+.act-row { display:flex; gap:6px; align-items:stretch; flex-wrap:wrap; }
+.btn-primary {
+  flex:2;
+  min-width:120px;
+  height:46px;
+  background:var(--green);
+  border-radius:5px;
+  color:#fff;
+  font-size:14px;
+  font-weight:800;
+  letter-spacing:2px;
+  text-transform:uppercase;
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  transition:background .12s;
+}
+.btn-primary:hover { background:#006648; }
+.btn-primary:active { transform:scale(.97); }
+.btn-secondary {
+  flex:1;
+  min-width:80px;
+  height:46px;
+  background:rgba(201,168,76,.12);
+  border:1px solid rgba(201,168,76,.3);
+  border-radius:5px;
+  color:var(--gold);
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:1.5px;
+  text-transform:uppercase;
+  transition:all .12s;
+}
+.btn-secondary:hover { background:rgba(201,168,76,.22); }
+.btn-secondary:active { transform:scale(.97); }
+.btn-icon {
+  width:46px; height:46px;
+  background:var(--panel2);
+  border:1px solid var(--border);
+  border-radius:5px;
+  color:rgba(255,255,255,.5);
+  font-size:18px;
+  display:flex; align-items:center; justify-content:center;
+  transition:all .12s;
+  flex-shrink:0;
+}
+.btn-icon:hover { background:rgba(255,255,255,.1); color:var(--text); }
+.btn-icon:active { transform:scale(.95); }
+.btn-icon:disabled { opacity:.22; cursor:default; }
+
+/* ── Export row ── */
+.exp-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.btn-export {
+  height:42px;
+  padding:0 18px;
+  background:linear-gradient(135deg,#C9A84C,#e8c96a,#C9A84C);
+  border-radius:5px;
+  color:#1a1200;
+  font-size:12px;
+  font-weight:800;
+  letter-spacing:2px;
+  text-transform:uppercase;
+  display:flex; align-items:center; gap:7px;
+  box-shadow:0 2px 12px rgba(201,168,76,.28);
+  transition:all .15s;
+  white-space:nowrap;
+}
+.btn-export:hover { transform:translateY(-1px); box-shadow:0 4px 20px rgba(201,168,76,.4); }
+.btn-export:active { transform:none; }
+.btn-export:disabled { opacity:.45; cursor:default; transform:none; }
+.btn-export svg { width:13px; height:13px; flex-shrink:0; }
+.fmt-btn {
+  height:32px; padding:0 11px;
+  background:var(--panel2);
+  border:1px solid var(--border);
+  border-radius:3px;
+  color:var(--muted);
+  font-size:10px; font-weight:600; letter-spacing:.8px;
+  transition:all .12s;
+}
+.fmt-btn:hover { background:rgba(255,255,255,.1); color:var(--text); }
+.fmt-btn.on { background:rgba(201,168,76,.15); border-color:var(--gold); color:var(--gold); }
+.res-sel {
+  height:32px; padding:0 8px;
+  background:var(--panel2);
+  border:1px solid var(--border);
+  border-radius:3px;
+  color:var(--text);
+  font-size:11px;
+  cursor:pointer;
+}
+.exp-fb {
+  font-size:10px; letter-spacing:1.5px;
+  color:rgba(255,255,255,.4);
+  font-family:var(--f);
+  opacity:0; transition:opacity .3s;
+  white-space:nowrap;
+}
+.exp-fb.vis { opacity:1; }
+
+/* ── Checkbox toggle ── */
+.chk-row { display:flex; align-items:center; gap:8px; cursor:pointer; -webkit-tap-highlight-color:transparent; padding:3px 5px; border-radius:3px; transition:background .12s; }
+.chk-row:hover { background:rgba(255,255,255,.05); }
+.chk-box { width:18px; height:18px; min-width:18px; border:2px solid rgba(255,255,255,.25); border-radius:3px; background:rgba(255,255,255,.04); display:flex; align-items:center; justify-content:center; transition:all .12s; pointer-events:none; }
+.chk-box svg { display:none; width:10px; height:10px; }
+.chk-row.on .chk-box { background:var(--gold); border-color:var(--gold); }
+.chk-row.on .chk-box svg { display:block; }
+.chk-row.on .chk-lbl { color:rgba(255,255,255,.85); }
+.chk-lbl { font-size:10.5px; letter-spacing:1.5px; text-transform:uppercase; font-family:var(--f); color:rgba(255,255,255,.42); transition:color .12s; white-space:nowrap; }
+
+/* ── Position preset buttons ── */
+.pos-btns { display:flex; gap:4px; flex-wrap:wrap; }
+.pos-btn {
+  height:30px; padding:0 10px;
+  background:var(--panel2);
+  border:1px solid var(--border);
+  border-radius:3px;
+  color:var(--muted);
+  font-size:10px; font-weight:700; letter-spacing:.5px;
+  transition:all .12s;
+  white-space:nowrap;
+}
+.pos-btn:hover { background:rgba(255,255,255,.1); color:var(--text); }
+.pos-btn.on { background:rgba(201,168,76,.15); border-color:var(--gold); color:var(--gold); }
+.inset-input {
+  width:60px; height:30px;
+  background:var(--panel2);
+  border:1px solid var(--border);
+  border-radius:3px;
+  color:var(--text);
+  text-align:center;
+  font-family:var(--f);
+  font-size:14px;
+  font-weight:700;
+}
+.inset-input:focus { border-color:var(--gold); }
+
+/* ── Status bar ── */
+.statusbar {
+  display:flex; align-items:center; gap:8px;
+  padding:5px 14px;
+  background:var(--panel);
+  border-top:1px solid var(--border);
+  font-size:10px; letter-spacing:1px;
+  color:var(--muted);
+  font-family:var(--f);
+  flex-shrink:0;
+}
+.live-dot { width:6px; height:6px; border-radius:50%; background:#22c55e; box-shadow:0 0 5px #22c55e; animation:lp 1.6s ease-in-out infinite; flex-shrink:0; }
+@keyframes lp { 0%,100%{opacity:1}50%{opacity:.3} }
+
+/* ── Upload ref hidden input ── */
+#refInput { display:none; }
+
+/* ── Divider line ── */
+.vdivider { width:1px; height:20px; background:var(--border); flex-shrink:0; }
+
+/* ── Responsive ── */
+@media(max-width:520px) {
+  .hdr { padding:6px 10px; gap:6px; }
+  .ctrl-sec { padding:9px 10px 10px; }
+  .sp-btn { width:44px; height:44px; }
+  .sp-val { height:44px; }
+  .opt-btn { height:44px; }
+  .st-pill { height:42px; }
+  .btn-primary,.btn-secondary,.btn-icon { height:50px; }
+  .hdr-sub { display:none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ═══════ HEADER ═══════ -->
+<header class="hdr">
+  <div class="hdr-brand">
+    <div class="hdr-title">Golf Overlay</div>
+    <div class="hdr-sub">v3 · PGA Tour Style</div>
+  </div>
+  <div class="hdr-tools">
+    <!-- Aspect ratio -->
+    <div style="display:flex;gap:3px">
+      <button class="tb on" id="asp169" onclick="setAsp('169',this)">16:9</button>
+      <button class="tb" id="asp916" onclick="setAsp('916',this)">9:16</button>
+      <button class="tb" id="asp11"  onclick="setAsp('11',this)">1:1</button>
+    </div>
+    <div class="vdivider"></div>
+    <!-- Safe zone toggles -->
+    <button class="tb" id="btnActionSafe" onclick="toggleSafe('action')">Action Safe</button>
+    <button class="tb" id="btnTitleSafe"  onclick="toggleSafe('title')">Title Safe</button>
+    <div class="vdivider"></div>
+    <!-- Units -->
+    <button class="tb on" id="unitYds" onclick="setUnit('YDS',this)">YDS</button>
+    <button class="tb" id="unitM"   onclick="setUnit('M',this)">M</button>
+    <div class="vdivider"></div>
+    <!-- Ref image -->
+    <button class="tb" onclick="document.getElementById('refInput').click()">📷 Ref</button>
+    <input type="file" id="refInput" accept="image/*" onchange="loadRef(this)">
+    <button class="tb danger" onclick="clearRef()" id="btnClearRef" style="display:none">✕ Ref</button>
+  </div>
+</header>
+
+<!-- ═══════ PREVIEW ═══════ -->
+<div class="preview-wrap" id="previewWrap">
+  <div class="preview-canvas-wrap" id="canvasWrap">
+    <canvas id="previewCanvas"></canvas>
+    <!-- Ref image controls (shown on hover when ref loaded) -->
+    <div class="ref-controls" id="refControls" style="display:none">
+      <div class="ref-ctrl-chip">
+        <span>Opacity</span>
+        <input type="range" id="refOpacity" min="0" max="100" value="40" oninput="setRefOpacity(this.value)">
+      </div>
+      <div class="ref-ctrl-chip">
+        <button onclick="toggleRefVisibility()" id="btnRefVis">Hide</button>
+        <button onclick="resetRefTransform()">Reset</button>
+      </div>
+    </div>
+    <!-- Corner tools -->
+    <div class="preview-corner-tools">
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ CONTROLS ═══════ -->
+<div class="ctrl" id="ctrlPanel">
+
+  <!-- ROW: Hole + Par + Yards in one line -->
+  <div class="ctrl-sec">
+    <div class="row" style="gap:14px;flex-wrap:wrap">
+
+      <!-- Hole -->
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <div class="sec-label">Hole 洞号</div>
+        <div class="spinner">
+          <button class="sp-btn" onclick="adj('holeNumber',-1)">−</button>
+          <input class="sp-val" id="inHole" type="number" min="1" max="18" value="1" oninput="inp('holeNumber',this.value,1,18)">
+          <button class="sp-btn" onclick="adj('holeNumber',1)">+</button>
+        </div>
+      </div>
+
+      <!-- Par -->
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <div class="sec-label">Par 标准杆</div>
+        <div class="opt-btns">
+          <button class="opt-btn" data-par="3" onclick="setPar(3,this)">3</button>
+          <button class="opt-btn on" data-par="4" onclick="setPar(4,this)">4</button>
+          <button class="opt-btn" data-par="5" onclick="setPar(5,this)">5</button>
+        </div>
+      </div>
+
+      <!-- Yards -->
+      <div style="display:flex;flex-direction:column;gap:5px;flex:1;min-width:140px">
+        <div class="sec-label" id="yardsSecLabel">Yards 码数</div>
+        <div class="row" style="gap:5px">
+          <div class="spinner">
+            <button class="sp-btn" onclick="adj('yards',-5)">−</button>
+            <input class="sp-val" id="inYards" type="number" min="0" max="700" value="385" oninput="inp('yards',this.value,0,700)" style="width:64px">
+            <button class="sp-btn" onclick="adj('yards',5)">+</button>
+          </div>
+          <span class="sp-unit" id="unitLabel">YDS</span>
+        </div>
+      </div>
+
+      <!-- Display toggles -->
+      <div style="display:flex;flex-direction:column;gap:6px;justify-content:flex-end">
+        <div class="chk-row on" id="chkYards" onclick="tog('showYards')">
+          <span class="chk-box"><svg viewBox="0 0 10 8" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 4,7 9,1"/></svg></span>
+          <span class="chk-lbl">Yards</span>
+        </div>
+        <div class="chk-row on" id="chkStatus" onclick="tog('showStatus')">
+          <span class="chk-box"><svg viewBox="0 0 10 8" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 4,7 9,1"/></svg></span>
+          <span class="chk-lbl">Status</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ROW: Shot Type -->
+  <div class="ctrl-sec">
+    <div class="row" style="justify-content:space-between">
+      <div class="sec-label">Shot Type 击球类型</div>
+      <span class="auto-tag" id="autoTag">AUTO ✓</span>
+    </div>
+    <div class="st-pills" id="stPills">
+      <button class="st-pill" data-st="TEE"      onclick="setST('TEE',this)">🏌 Tee</button>
+      <button class="st-pill" data-st="APPROACH" onclick="setST('APPROACH',this)">🎯 Approach</button>
+      <button class="st-pill" data-st="CHIP"     onclick="setST('CHIP',this)">⛳ Chip</button>
+      <button class="st-pill" data-st="PUTT"     onclick="setST('PUTT',this)">🟣 Putt</button>
+    </div>
+  </div>
+
+  <!-- ROW: Result -->
+  <div class="ctrl-sec">
+    <div class="sec-label">Hole Result 本洞成绩（完洞后选）</div>
+    <div class="res-pills" id="resPills">
+      <button class="res-pill" data-r="ace"    onclick="setRes('ace',this)">⭐ Ace</button>
+      <button class="res-pill" data-r="eagle"  onclick="setRes('eagle',this)">🦅 Eagle</button>
+      <button class="res-pill" data-r="birdie" onclick="setRes('birdie',this)">🐦 Birdie</button>
+      <button class="res-pill" data-r="par"    onclick="setRes('par',this)">🔵 Par</button>
+      <button class="res-pill" data-r="bogey"  onclick="setRes('bogey',this)">⬜ Bogey</button>
+      <button class="res-pill" data-r="double" onclick="setRes('double',this)">⬛ Dbl</button>
+      <button class="res-pill" data-r="worse"  onclick="setRes('worse',this)">🔺 +3</button>
+    </div>
+  </div>
+
+  <!-- ROW: Position preset -->
+  <div class="ctrl-sec">
+    <div class="sec-label">Overlay Position 位置</div>
+    <div class="row">
+      <div class="pos-btns" id="posBtns">
+        <button class="pos-btn on" data-pos="TR" onclick="setPos('TR',this)">↗ Top Right</button>
+        <button class="pos-btn" data-pos="TL"    onclick="setPos('TL',this)">↖ Top Left</button>
+        <button class="pos-btn" data-pos="BL"    onclick="setPos('BL',this)">↙ Bot Left</button>
+        <button class="pos-btn" data-pos="BR"    onclick="setPos('BR',this)">↘ Bot Right</button>
+        <button class="pos-btn" data-pos="C"     onclick="setPos('C',this)">⊹ Center</button>
+      </div>
+      <span style="font-size:10px;color:var(--muted);font-family:var(--f);white-space:nowrap">Inset</span>
+      <input class="inset-input" id="insetInput" type="number" min="0" max="200" value="64" oninput="setInset(this.value)">
+      <span style="font-size:10px;color:var(--muted);font-family:var(--f)">px</span>
+    </div>
+    <div style="font-size:9px;color:var(--muted);font-family:var(--f);letter-spacing:1px;margin-top:-2px">
+      Drag overlay in preview to custom position 可在预览区拖拽定位
+    </div>
+  </div>
+
+  <!-- ROW: Actions + Export -->
+  <div class="ctrl-sec">
+    <div class="act-row">
+      <button class="btn-primary" onclick="nextShot()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        NEXT SHOT 下一杆
+      </button>
+      <button class="btn-secondary" onclick="newHole()">⛳ NEW HOLE 新洞</button>
+      <button class="btn-icon" id="btnUndoShot"  onclick="undoShot()"  title="上一杆 Undo Shot" disabled>↩</button>
+      <button class="btn-icon" id="btnUndoHole"  onclick="undoHole()"  title="上一洞 Undo Hole">⌫</button>
+    </div>
+    <div class="exp-row">
+      <button class="btn-export" id="btnExport" onclick="takeSnapshot()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        EXPORT PNG
+      </button>
+      <button class="fmt-btn on" id="fmtT" onclick="setFmt('transparent',this)">Transparent</button>
+      <button class="fmt-btn"    id="fmtB" onclick="setFmt('black',this)">Black BG</button>
+      <select class="res-sel" id="resSel">
+        <option value="1080">1080p</option>
+        <option value="2160">4K</option>
+      </select>
+      <div class="chk-row" id="chkIncRef" onclick="tog('exportIncRef')" style="display:none">
+        <span class="chk-box"><svg viewBox="0 0 10 8" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 4,7 9,1"/></svg></span>
+        <span class="chk-lbl">Include Ref 包含参考图</span>
+      </div>
+      <span class="exp-fb" id="expFb"></span>
+    </div>
+  </div>
+
+</div><!-- /ctrl -->
+
+<!-- ═══════ STATUS BAR ═══════ -->
+<div class="statusbar">
+  <div class="live-dot"></div>
+  <span id="sbText">Hole 1 · Par 4 · Shot 1 · TEE SHOT</span>
+  <span style="margin-left:auto;font-size:9px;opacity:.5">⌨ N=Next · U=Undo · B=Birdie · P=Par · G=Bogey · Enter=Export</span>
+  <span id="sbStore" style="font-size:9px;opacity:.5;margin-left:8px">LS✓</span>
+</div>
+
+</div><!-- /app -->
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  CONSTANTS & LOOKUP TABLES
+// ═══════════════════════════════════════════════════════════════
+const PAR_DEF = { 3:165, 4:385, 5:520 };
+const TYPE_LBL = { TEE:'TEE SHOT', APPROACH:'APPROACH', CHIP:'CHIP', PUTT:'PUTTING' };
+const TYPE_COLOR = { TEE:'#ffffff', APPROACH:'#60a5fa', CHIP:'#f59e0b', PUTT:'#a78bfa' };
+const RES_LBL = { ace:'HOLE IN ONE', eagle:'EAGLE', birdie:'BIRDIE', par:'PAR', bogey:'BOGEY', double:'DOUBLE BOGEY', worse:'+3 BOGEY' };
+const RES_COLOR = { ace:'#fbbf24', eagle:'#fbbf24', birdie:'#f87171', par:'#60a5fa', bogey:'#9ca3af', double:'#6b7280', worse:'#6b7280' };
+const RES_BG = { ace:'rgba(251,191,36,.18)', eagle:'rgba(251,191,36,.18)', birdie:'rgba(248,113,113,.16)', par:'rgba(96,165,250,.14)', bogey:'rgba(156,163,175,.12)', double:'rgba(107,114,128,.12)', worse:'rgba(107,114,128,.12)' };
+const ASP_RATIO = { '169': 16/9, '916': 9/16, '11': 1 };
+const ASP_LABEL = { '169': '16:9', '916': '9:16', '11': '1:1' };
+
+// Auto shot type inference
+function inferType(par, shot) {
+  if (shot === 1) return 'TEE';
+  const d = shot - par;
+  if (d >= 0) return 'PUTT';
+  if (par === 3) return 'PUTT';
+  if (par === 4) return shot === 2 ? 'APPROACH' : 'PUTT';
+  if (par === 5) { if (shot===2) return 'APPROACH'; if (shot===3) return 'CHIP'; return 'PUTT'; }
+  return 'TEE';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════
+const DFLT_STATE = {
+  holeNumber: 1,
+  par: 4,
+  yards: 385,
+  holeYards: 385,
+  shotIndex: 1,
+  shotType: 'TEE',
+  manualType: false,
+  holeResult: null,
+  showYards: true,
+  showStatus: true,
+  unit: 'YDS',        // 'YDS' | 'M'
+  position: 'TR',     // TR TL BL BR C custom
+  inset: 64,
+  customX: null,      // 0..1 normalized
+  customY: null,      // 0..1 normalized
+  safeAction: false,
+  safeTitle: false,
+  aspect: '169',
+  exportFmt: 'transparent',
+  exportIncRef: false,
+};
+
+let S = { ...DFLT_STATE };
+
+// Shot history stack for undo
+let shotHistory = [];   // [{...full state snapshot}]
+let holeHistory = [];   // [{...state snapshot before hole}]
+
+// Reference image
+let refImage = null;         // HTMLImageElement
+let refVisible = true;
+let refOpacity = 0.4;
+let refOffX = 0, refOffY = 0, refScale = 1;
+let refDragging = false, refDragStartX = 0, refDragStartY = 0, refDragOX = 0, refDragOY = 0;
+
+// Overlay dragging
+let ovDragging = false;
+let ovDragStartX = 0, ovDragStartY = 0;
+
+// Canvas context
+const canvas = document.getElementById('previewCanvas');
+const ctx = canvas.getContext('2d');
+
+// Export format
+let exportFmt = 'transparent';
+
+// ── LOCALSTORAGE ──────────────────────────────────────────────
+function saveState() {
+  try {
+    const toSave = { ...S };
+    delete toSave.exportIncRef; // volatile
+    localStorage.setItem('golf_v3', JSON.stringify(toSave));
+    document.getElementById('sbStore').textContent = 'LS✓';
+  } catch(e) {
+    document.getElementById('sbStore').textContent = 'LS✗';
+  }
+}
+function loadState() {
+  try {
+    const raw = localStorage.getItem('golf_v3');
+    if (raw) S = { ...DFLT_STATE, ...JSON.parse(raw) };
+  } catch(e) {}
+}
+
+// ── STATE MUTATIONS ──────────────────────────────────────────
+function push(partial) {
+  // Push to shot history before mutating
+  shotHistory.push({ ...S });
+  if (shotHistory.length > 40) shotHistory.shift();
+  Object.assign(S, partial);
+  saveState();
+  render();
+}
+
+function undoShot() {
+  if (!shotHistory.length) return;
+  S = shotHistory.pop();
+  saveState();
+  render();
+}
+
+function undoHole() {
+  if (!holeHistory.length) return;
+  S = holeHistory.pop();
+  saveState();
+  render();
+}
+
+function newHole() {
+  holeHistory.push({ ...S });
+  if (holeHistory.length > 20) holeHistory.shift();
+  shotHistory = [];
+  const next = S.holeNumber >= 18 ? 1 : S.holeNumber + 1;
+  S = {
+    ...DFLT_STATE,
+    holeNumber: next,
+    par: S.par,
+    yards: PAR_DEF[S.par],
+    holeYards: PAR_DEF[S.par],
+    unit: S.unit,
+    position: S.position,
+    inset: S.inset,
+    customX: S.customX,
+    customY: S.customY,
+    safeAction: S.safeAction,
+    safeTitle: S.safeTitle,
+    aspect: S.aspect,
+    exportFmt: S.exportFmt,
+    showYards: S.showYards,
+    showStatus: S.showStatus,
+  };
+  saveState();
+  render();
+}
+
+function nextShot() {
+  const next = S.shotIndex + 1;
+  const type = S.manualType ? S.shotType : inferType(S.par, next);
+  push({ shotIndex: next, shotType: type, manualType: false });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CONTROL HANDLERS
+// ═══════════════════════════════════════════════════════════════
+function adj(key, d) {
+  const ranges = { holeNumber: [1,18], yards: [0,700] };
+  const [mn, mx] = ranges[key] || [0, 9999];
+  push({ [key]: Math.max(mn, Math.min(mx, (S[key]||0) + d)) });
+}
+function inp(key, v, mn, mx) {
+  const n = parseInt(v);
+  if (!isNaN(n)) push({ [key]: Math.max(mn, Math.min(mx, n)) });
+}
+function tog(key) { push({ [key]: !S[key] }); }
+
+function setPar(p, btn) {
+  push({ par: p, yards: PAR_DEF[p], holeYards: PAR_DEF[p] });
+}
+function setST(type, btn) { push({ shotType: type, manualType: true }); }
+function setRes(r, btn) { push({ holeResult: S.holeResult === r ? null : r }); }
+
+function setAsp(asp, btn) {
+  push({ aspect: asp });
+  document.querySelectorAll('[id^=asp]').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+}
+function setUnit(u, btn) {
+  push({ unit: u });
+  document.querySelectorAll('#unitYds,#unitM').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+}
+function setPos(pos, btn) {
+  push({ position: pos, customX: null, customY: null });
+  document.querySelectorAll('.pos-btn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+}
+function setInset(v) { push({ inset: Math.max(0, Math.min(200, parseInt(v)||0)) }); }
+function setFmt(f, btn) {
+  exportFmt = f;
+  S.exportFmt = f;
+  document.querySelectorAll('.fmt-btn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+}
+function toggleSafe(type) {
+  if (type === 'action') {
+    S.safeAction = !S.safeAction;
+    document.getElementById('btnActionSafe').classList.toggle('on', S.safeAction);
+  } else {
+    S.safeTitle = !S.safeTitle;
+    document.getElementById('btnTitleSafe').classList.toggle('on', S.safeTitle);
+  }
+  saveState();
+  render();
+}
+
+// ── Ref image ────────────────────────────────────────────────
+function loadRef(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (refImage && refImage._url) URL.revokeObjectURL(refImage._url);
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    refImage = img;
+    refImage._url = url;
+    refOffX = 0; refOffY = 0; refScale = 1;
+    refVisible = true;
+    document.getElementById('refControls').style.display = '';
+    document.getElementById('refControls').classList.add('always-show');
+    document.getElementById('btnClearRef').style.display = '';
+    document.getElementById('chkIncRef').style.display = '';
+    document.getElementById('btnRefVis').textContent = 'Hide 隐藏';
+    render();
+  };
+  img.src = url;
+  input.value = '';
+}
+function clearRef() {
+  if (refImage && refImage._url) URL.revokeObjectURL(refImage._url);
+  refImage = null;
+  document.getElementById('refControls').style.display = 'none';
+  document.getElementById('btnClearRef').style.display = 'none';
+  document.getElementById('chkIncRef').style.display = 'none';
+  render();
+}
+function setRefOpacity(v) {
+  refOpacity = parseFloat(v) / 100;
+  render();
+}
+function toggleRefVisibility() {
+  refVisible = !refVisible;
+  document.getElementById('btnRefVis').textContent = refVisible ? 'Hide 隐藏' : 'Show 显示';
+  render();
+}
+function resetRefTransform() {
+  refOffX = 0; refOffY = 0; refScale = 1;
+  render();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CANVAS LAYOUT ENGINE
+// ═══════════════════════════════════════════════════════════════
+
+// Returns the computed (x,y) of the overlay top-left corner
+// in logical canvas coords [0..cW, 0..cH]
+function computeOvPos(cW, cH, ovW, ovH, pos, inset, customX, customY) {
+  if (pos === 'custom' && customX !== null && customY !== null) {
+    return { x: customX * cW, y: customY * cH };
+  }
+  const i = inset;
+  switch (pos) {
+    case 'TR': return { x: cW - ovW - i, y: i };
+    case 'TL': return { x: i,            y: i };
+    case 'BL': return { x: i,            y: cH - ovH - i };
+    case 'BR': return { x: cW - ovW - i, y: cH - ovH - i };
+    case 'C':  return { x: (cW - ovW)/2, y: (cH - ovH)/2 };
+    default:   return { x: cW - ovW - i, y: i }; // TR fallback
+  }
+}
+
+// ── Overlay draw function (used for both preview and export) ──
+// cfg: { scale, cW, cH, forExport }
+// OV dimensions at scale=1 (logical units):
+const OV = {
+  leftW: 80,    // green hole block
+  divW: 3,      // gold divider
+  rightMinW: 260,
+  totalH: 88,
+  topH: 62,
+  botH: 26,
+};
+
+function ovTotalW(cfg) {
+  return OV.leftW + OV.divW + OV.rightMinW;
+}
+
+function drawOverlay(ctx, cfg) {
+  const sc = cfg.scale;
+  const { pos, forExport } = cfg;
+
+  const lW  = OV.leftW  * sc;
+  const dvW = OV.divW   * sc;
+  const rW  = OV.rightMinW * sc;
+  const tH  = OV.topH   * sc;
+  const bH  = OV.botH   * sc;
+  const H   = OV.totalH * sc;
+  const W   = lW + dvW + rW;
+  const rx  = lW + dvW;
+
+  // Position
+  const { x: ox, y: oy } = pos;
+
+  // === Left green block ===
+  ctx.fillStyle = '#00573F';
+  ctx.fillRect(ox, oy, lW, H);
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,.5)';
+  ctx.letterSpacing = (2*sc)+'px';
+  ctx.font = `600 ${7*sc}px "Barlow Condensed","Arial Narrow",sans-serif`;
+  ctx.fillText('HOLE', ox + lW/2, oy + 15*sc);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `900 ${38*sc}px "Barlow Condensed","Arial Narrow",sans-serif`;
+  ctx.letterSpacing = (-1.5*sc)+'px';
+  ctx.fillText(String(S.holeNumber), ox + lW/2, oy + 43*sc);
+
+  ctx.fillStyle = '#C9A84C';
+  ctx.font = `700 ${9*sc}px "Barlow Condensed","Arial Narrow",sans-serif`;
+  ctx.letterSpacing = (1*sc)+'px';
+  ctx.fillText('PAR ' + S.par, ox + lW/2, oy + 74*sc);
+
+  // === Gold divider ===
+  ctx.fillStyle = '#C9A84C';
+  ctx.fillRect(ox + lW, oy, dvW, H);
+
+  // === Right dark block ===
+  ctx.fillStyle = 'rgba(6,10,16,.97)';
+  ctx.fillRect(ox + rx, oy, rW, H);
+  ctx.fillStyle = 'rgba(255,255,255,.055)';
+  ctx.fillRect(ox + rx, oy + tH, rW, 1*sc);
+  ctx.fillStyle = 'rgba(0,0,0,.3)';
+  ctx.fillRect(ox + rx, oy + tH + 1*sc, rW, bH - 1*sc);
+
+  const pX = ox + rx + 14*sc;
+
+  // === Yards block ===
+  if (S.showYards) {
+    const yardsLbl = S.shotIndex === 1 ? (S.unit === 'M' ? 'HOLE' : 'HOLE') : (S.unit === 'M' ? 'TO PIN' : 'TO PIN');
+    const yardsDisp = S.unit === 'M' ? Math.round(S.yards * 0.9144) : S.yards;
+
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255,255,255,.35)';
+    ctx.letterSpacing = (2*sc)+'px';
+    ctx.font = `600 ${6.5*sc}px "Barlow Condensed","Arial Narrow",sans-serif`;
+    ctx.fillText(yardsLbl, pX, oy + 14*sc);
+
+    ctx.fillStyle = 'rgba(255,255,255,.92)';
+    ctx.font = `900 ${28*sc}px "Barlow Condensed","Arial Narrow",sans-serif`;
+    ctx.letterSpacing = (-0.5*sc)+'px';
+    ctx.fillText(String(yardsDisp), pX, oy + 38*sc);
+    const yw = ctx.measureText(String(yardsDisp)).width;
+
+    ctx.fillStyle = 'rgba(255,255,255,.28)';
+    ctx.font = `500 ${9*sc}px "Barlow Condensed","Arial Narrow",sans-serif`;
+    ctx.letterSpacing = '0px';
+    ctx.fillText(S.unit, pX + yw + 3*sc, oy + 38*sc);
+
+    // Separator
+    ctx.fillStyle = 'rgba(255,255,255,.09)';
+    ctx.fillRect(pX + yw + (S.unit.length * 6 * sc) + 6*sc, oy + 10*sc, 1*sc, 36*sc);
+  }
+
+  // === Shot type ===
+  if (S.showStatus) {
+    const col = TYPE_COLOR[S.shotType] || '#ffffff';
+    const lbl = TYPE_LBL[S.shotType] || S.shotType;
+
+    // Find x after yards separator
+    let stX = pX;
+    if (S.showYards) {
+      ctx.font = `900 ${28*sc}px "Barlow Condensed","Arial Narrow",sans-serif`;
+      ctx.letterSpacing = (-0.5*sc)+'px';
+      const yw2 = ctx.measureText(String(S.unit === 'M' ? Math.round(S.yards*0.9144) : S.yards)).width;
+      stX = pX + yw2 + (S.unit.length * 6 * sc) + 14*sc;
+    }
+
+    const dr = 2.5*sc;
+    ctx.beginPath();
+    ctx.arc(stX + dr, oy + tH/2, dr, 0, Math.PI*2);
+    ctx.fillStyle = col;
+    ctx.fill();
+
+    ctx.font = `700 ${11*sc}px "Barlow Condensed","Arial Narrow",sans-serif`;
+    ctx.letterSpacing = (1.5*sc)+'px';
+    ctx.fillStyle = col;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(lbl, stX + dr*2 + 5*sc, oy + tH/2);
+  }
+
+  // === Result badge (right side) ===
+  if (S.holeResult) {
+    const rl = RES_LBL[S.holeResult] || S.holeResult.toUpperCase();
+    const rc = RES_COLOR[S.holeResult] || '#9ca3af';
+    const rbg = RES_BG[S.holeResult] || 'rgba(0,0,0,.3)';
+
+    ctx.font = `800 ${10*sc}px "Barlow Condensed","Arial Narrow",sans-serif`;
+    ctx.letterSpacing = (1.5*sc)+'px';
+    const rw = ctx.measureText(rl).width;
+    const bpad = 7*sc, bh2 = 19*sc;
+    const bx = ox + rx + rW - 12*sc - rw - bpad*2;
+    const by = oy + tH/2 - bh2/2;
+
+    rrect(ctx, bx, by, rw + bpad*2, bh2, 3*sc);
+    ctx.fillStyle = rbg; ctx.fill();
+    ctx.strokeStyle = rc + '60'; ctx.lineWidth = 1*sc; ctx.stroke();
+    ctx.fillStyle = rc;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(rl, bx + bpad, oy + tH/2);
+  }
+
+  // === Shot pips ===
+  const pipMax = Math.max(S.par, S.shotIndex);
+  const pW = 22*sc, pH = 14*sc, pG = 4*sc;
+  let sx = ox + rx + 10*sc + 28*sc;
+  const sy = oy + tH + 1*sc + (bH - pH) / 2;
+
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,.2)';
+  ctx.font = `600 ${6.5*sc}px "Barlow Condensed","Arial Narrow",sans-serif`;
+  ctx.letterSpacing = (1.5*sc)+'px';
+  ctx.fillText('SHOT', ox + rx + 10*sc, oy + tH + bH/2);
+
+  for (let i = 1; i <= pipMax; i++) {
+    const iC = i === S.shotIndex, iP = i < S.shotIndex;
+    rrect(ctx, sx, sy, pW, pH, 2*sc);
+    if (iC) ctx.fillStyle = '#C9A84C';
+    else if (iP) ctx.fillStyle = 'rgba(255,255,255,.15)';
+    else { ctx.fillStyle = 'rgba(255,255,255,.05)'; ctx.strokeStyle = 'rgba(255,255,255,.09)'; ctx.lineWidth = 1*sc; ctx.stroke(); }
+    ctx.fill();
+    ctx.font = `800 ${9*sc}px "Barlow Condensed","Arial Narrow",sans-serif`;
+    ctx.letterSpacing = '0px';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = iC ? '#000' : iP ? 'rgba(255,255,255,.4)' : 'rgba(255,255,255,.1)';
+    ctx.fillText(String(i), sx + pW/2, sy + pH/2 + 0.5*sc);
+    sx += pW + pG;
+  }
+}
+
+// ── safe zone lines ──────────────────────────────────────────
+function drawSafeZones(ctx, cW, cH) {
+  if (!S.safeAction && !S.safeTitle) return;
+  ctx.save();
+  ctx.setLineDash([5, 5]);
+  ctx.lineWidth = 1;
+  if (S.safeAction) {
+    // Action safe: 5% from edges
+    const ax = cW * 0.05, ay = cH * 0.05;
+    ctx.strokeStyle = 'rgba(255,200,0,.35)';
+    ctx.strokeRect(ax, ay, cW - ax*2, cH - ay*2);
+    ctx.fillStyle = 'rgba(255,200,0,.5)';
+    ctx.font = '10px "Barlow Condensed","Arial Narrow",sans-serif';
+    ctx.letterSpacing = '1px';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText('ACTION SAFE', ax + 4, ay + 3);
+  }
+  if (S.safeTitle) {
+    // Title safe: 10% from edges
+    const tx = cW * 0.1, ty = cH * 0.1;
+    ctx.strokeStyle = 'rgba(255,140,0,.35)';
+    ctx.strokeRect(tx, ty, cW - tx*2, cH - ty*2);
+    ctx.fillStyle = 'rgba(255,140,0,.5)';
+    ctx.font = '10px "Barlow Condensed","Arial Narrow",sans-serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText('TITLE SAFE', tx + 4, ty + 3);
+  }
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CANVAS SIZING & RENDER
+// ═══════════════════════════════════════════════════════════════
+function getCanvasSize() {
+  const wrap = document.getElementById('previewWrap');
+  const wW = wrap.clientWidth, wH = wrap.clientHeight;
+  const ratio = ASP_RATIO[S.aspect] || (16/9);
+  let cW, cH;
+  if (wW / wH > ratio) {
+    cH = wH; cW = Math.round(cH * ratio);
+  } else {
+    cW = wW; cH = Math.round(cW / ratio);
+  }
+  return { cW: Math.max(cW, 100), cH: Math.max(cH, 60) };
+}
+
+function sizeCanvas() {
+  const { cW, cH } = getCanvasSize();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = cW * dpr;
+  canvas.height = cH * dpr;
+  canvas.style.width  = cW + 'px';
+  canvas.style.height = cH + 'px';
+  const wrap = document.getElementById('canvasWrap');
+  wrap.style.width  = cW + 'px';
+  wrap.style.height = cH + 'px';
+  return { cW, cH, dpr };
+}
+
+function render() {
+  const { cW, cH, dpr } = sizeCanvas();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // BG
+  ctx.clearRect(0, 0, cW, cH);
+  ctx.fillStyle = '#111820';
+  ctx.fillRect(0, 0, cW, cH);
+
+  // Watermark text
+  ctx.fillStyle = 'rgba(255,255,255,.04)';
+  ctx.font = `${Math.round(cH*0.04)}px "Barlow Condensed","Arial Narrow",sans-serif`;
+  ctx.letterSpacing = '5px';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(ASP_LABEL[S.aspect] + ' · PREVIEW', cW/2, cH/2);
+
+  // Ref image
+  if (refImage && refVisible) {
+    ctx.save();
+    ctx.globalAlpha = refOpacity;
+    const iW = refImage.naturalWidth, iH = refImage.naturalHeight;
+    const scale = Math.max(cW/iW, cH/iH) * refScale;
+    const dx = (cW - iW*scale)/2 + refOffX;
+    const dy = (cH - iH*scale)/2 + refOffY;
+    ctx.drawImage(refImage, dx, dy, iW*scale, iH*scale);
+    ctx.restore();
+  }
+
+  // Overlay scale: target ~35% of canvas width
+  const ovNatW = OV.leftW + OV.divW + OV.rightMinW;
+  const ovNatH = OV.totalH;
+  const targetOvW = cW * 0.36;
+  const sc = Math.max(0.3, Math.min(2.5, targetOvW / ovNatW));
+
+  const ovW = ovNatW * sc, ovH = ovNatH * sc;
+  const inset = S.inset * (cW / 1920);  // scale inset with canvas
+
+  let pos;
+  if (S.position === 'custom' && S.customX !== null) {
+    pos = { x: S.customX * cW, y: S.customY * cH };
+  } else {
+    pos = computeOvPos(cW, cH, ovW, ovH, S.position, inset, S.customX, S.customY);
+  }
+  // Clamp to canvas
+  pos.x = Math.max(0, Math.min(cW - ovW, pos.x));
+  pos.y = Math.max(0, Math.min(cH - ovH, pos.y));
+
+  drawOverlay(ctx, { scale: sc, pos, cW, cH });
+
+  // Safe zones (on top of overlay)
+  drawSafeZones(ctx, cW, cH);
+
+  // Sync controls UI
+  syncControls();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SYNC CONTROLS (DOM → S)
+// ═══════════════════════════════════════════════════════════════
+function syncControls() {
+  // inputs
+  document.getElementById('inHole').value  = S.holeNumber;
+  document.getElementById('inYards').value = S.yards;
+  document.getElementById('insetInput').value = S.inset;
+  document.getElementById('unitLabel').textContent = S.unit;
+  document.getElementById('yardsSecLabel').textContent = S.unit === 'M' ? 'Yards → Metres' : 'Yards 码数';
+
+  // Par buttons
+  document.querySelectorAll('.opt-btn[data-par]').forEach(b =>
+    b.classList.toggle('on', parseInt(b.getAttribute('data-par')) === S.par));
+
+  // Shot type pills
+  document.querySelectorAll('.st-pill').forEach(b =>
+    b.className = 'st-pill' + (b.getAttribute('data-st') === S.shotType ? ' on-' + S.shotType : ''));
+
+  // Result pills
+  document.querySelectorAll('.res-pill').forEach(b => {
+    const r = b.getAttribute('data-r');
+    b.className = 'res-pill' + (r === S.holeResult ? ' on-' + r : '');
+  });
+
+  // Checkboxes
+  ['chkYards','chkStatus'].forEach(id => {
+    const key = id === 'chkYards' ? 'showYards' : 'showStatus';
+    document.getElementById(id).classList.toggle('on', S[key]);
+  });
+  document.getElementById('chkIncRef').classList.toggle('on', S.exportIncRef);
+
+  // Auto tag
+  document.getElementById('autoTag').style.opacity = S.manualType ? '0.3' : '1';
+
+  // Undo buttons
+  document.getElementById('btnUndoShot').disabled = shotHistory.length === 0;
+
+  // Pos buttons
+  document.querySelectorAll('.pos-btn').forEach(b =>
+    b.classList.toggle('on', b.getAttribute('data-pos') === S.position));
+
+  // Status bar
+  const yd = S.unit === 'M' ? Math.round(S.yards*0.9144)+'m' : S.yards+'yd';
+  document.getElementById('sbText').textContent =
+    `Hole ${S.holeNumber} · Par ${S.par} · Shot ${S.shotIndex} · ${TYPE_LBL[S.shotType]||S.shotType} · ${yd}` +
+    (S.holeResult ? ' · ' + (RES_LBL[S.holeResult]||S.holeResult) : '');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CANVAS EXPORT
+// ═══════════════════════════════════════════════════════════════
+function takeSnapshot() {
+  const resH = parseInt(document.getElementById('resSel').value) || 1080;
+  const ratio = ASP_RATIO[S.aspect] || (16/9);
+  const expCW = Math.round(resH * ratio);
+  const expCH = resH;
+
+  const ec = document.createElement('canvas');
+  ec.width = expCW; ec.height = expCH;
+  const ectx = ec.getContext('2d');
+
+  // Background
+  if (exportFmt === 'black') {
+    ectx.fillStyle = '#000';
+    ectx.fillRect(0, 0, expCW, expCH);
+  }
+  // else transparent (cleared)
+
+  // Optional ref image in export
+  if (refImage && refVisible && S.exportIncRef) {
+    ectx.save();
+    ectx.globalAlpha = refOpacity;
+    const iW = refImage.naturalWidth, iH = refImage.naturalHeight;
+    const scale = Math.max(expCW/iW, expCH/iH) * refScale;
+    const scaleRatio = expCW / (getCanvasSize().cW);
+    ectx.drawImage(refImage,
+      (expCW - iW*scale)/2 + refOffX * scaleRatio,
+      (expCH - iH*scale)/2 + refOffY * scaleRatio,
+      iW*scale, iH*scale);
+    ectx.restore();
+  }
+
+  // Overlay scale for export: same as preview logic but at full resolution
+  const ovNatW = OV.leftW + OV.divW + OV.rightMinW;
+  const targetOvW = expCW * 0.36;
+  const sc = targetOvW / ovNatW;
+
+  const ovW = ovNatW * sc, ovH = OV.totalH * sc;
+  const inset = S.inset;  // at export resolution (1080p px)
+
+  let pos;
+  if (S.position === 'custom' && S.customX !== null) {
+    pos = { x: S.customX * expCW, y: S.customY * expCH };
+  } else {
+    pos = computeOvPos(expCW, expCH, ovW, ovH, S.position, inset, S.customX, S.customY);
+  }
+  pos.x = Math.max(0, Math.min(expCW - ovW, pos.x));
+  pos.y = Math.max(0, Math.min(expCH - ovH, pos.y));
+
+  drawOverlay(ectx, { scale: sc, pos, cW: expCW, cH: expCH, forExport: true });
+
+  // Filename
+  const ts = S.shotType.toLowerCase();
+  const rs = S.holeResult ? '_' + S.holeResult : '';
+  const ys = S.showYards ? '_' + S.yards + (S.unit==='M'?'m':'yd') : '';
+  const fn = `hole${pad(S.holeNumber)}_shot${pad(S.shotIndex)}_${ts}${ys}${rs}.png`;
+
+  const link = document.createElement('a');
+  link.download = fn;
+  link.href = ec.toDataURL('image/png');
+  link.click();
+
+  const fb = document.getElementById('expFb');
+  fb.textContent = '✓ ' + fn; fb.classList.add('vis');
+  const btn = document.getElementById('btnExport'); btn.disabled = true;
+  setTimeout(() => { fb.classList.remove('vis'); btn.disabled = false; }, 3000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  DRAG TO REPOSITION OVERLAY
+// ═══════════════════════════════════════════════════════════════
+function getOvBounds() {
+  const { cW, cH } = getCanvasSize();
+  const ovNatW = OV.leftW + OV.divW + OV.rightMinW;
+  const sc = Math.max(0.3, Math.min(2.5, (cW * 0.36) / ovNatW));
+  const ovW = ovNatW * sc, ovH = OV.totalH * sc;
+  const inset = S.inset * (cW / 1920);
+  let pos;
+  if (S.position === 'custom' && S.customX !== null) {
+    pos = { x: S.customX * cW, y: S.customY * cH };
+  } else {
+    pos = computeOvPos(cW, cH, ovW, ovH, S.position, inset, S.customX, S.customY);
+  }
+  return { x: pos.x, y: pos.y, w: ovW, h: ovH, cW, cH };
+}
+
+function canvasPointerDown(e) {
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX || e.touches[0].clientX) - rect.left;
+  const my = (e.clientY || e.touches[0].clientY) - rect.top;
+  const b = getOvBounds();
+
+  if (mx >= b.x && mx <= b.x+b.w && my >= b.y && my <= b.y+b.h) {
+    // Hit overlay → drag overlay
+    ovDragging = true;
+    ovDragStartX = mx - b.x;
+    ovDragStartY = my - b.y;
+    canvas.classList.add('dragging');
+    e.preventDefault();
+  } else if (refImage && refVisible) {
+    // Hit outside overlay → maybe pan ref image
+    refDragging = true;
+    refDragStartX = mx; refDragStartY = my;
+    refDragOX = refOffX; refDragOY = refOffY;
+    canvas.classList.add('canpan');
+    e.preventDefault();
+  }
+}
+
+function canvasPointerMove(e) {
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
+  const my = (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top;
+  if (!mx && !my) return;
+
+  if (ovDragging) {
+    const b = getOvBounds();
+    const nx = mx - ovDragStartX;
+    const ny = my - ovDragStartY;
+    S.position = 'custom';
+    S.customX = Math.max(0, Math.min(1 - b.w/b.cW, nx / b.cW));
+    S.customY = Math.max(0, Math.min(1 - b.h/b.cH, ny / b.cH));
+    document.querySelectorAll('.pos-btn').forEach(b2 => b2.classList.remove('on'));
+    render();
+    e.preventDefault();
+  } else if (refDragging) {
+    refOffX = refDragOX + (mx - refDragStartX);
+    refOffY = refDragOY + (my - refDragStartY);
+    render();
+    e.preventDefault();
+  } else {
+    const b = getOvBounds();
+    const hit = mx >= b.x && mx <= b.x+b.w && my >= b.y && my <= b.y+b.h;
+    canvas.style.cursor = hit ? 'grab' : (refImage && refVisible ? 'grab' : 'default');
+  }
+}
+
+function canvasPointerUp(e) {
+  if (ovDragging) { ovDragging = false; saveState(); }
+  if (refDragging) { refDragging = false; }
+  canvas.classList.remove('dragging'); canvas.classList.remove('canpan');
+  canvas.style.cursor = 'default';
+}
+
+// Pinch-zoom ref on mobile (simple two-finger)
+let _pt1 = null, _pt2 = null, _refScaleStart = 1;
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) {
+    _pt1 = e.touches[0]; _pt2 = e.touches[1]; _refScaleStart = refScale;
+    e.preventDefault(); return;
+  }
+  canvasPointerDown(e);
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  if (e.touches.length === 2 && _pt1) {
+    const d0 = Math.hypot(_pt2.clientX-_pt1.clientX, _pt2.clientY-_pt1.clientY);
+    const d1 = Math.hypot(e.touches[1].clientX-e.touches[0].clientX, e.touches[1].clientY-e.touches[0].clientY);
+    refScale = Math.max(0.3, Math.min(4, _refScaleStart * (d1/d0)));
+    render(); e.preventDefault(); return;
+  }
+  canvasPointerMove(e);
+}, { passive: false });
+canvas.addEventListener('touchend', canvasPointerUp, { passive: false });
+canvas.addEventListener('mousedown', canvasPointerDown);
+canvas.addEventListener('mousemove', canvasPointerMove);
+canvas.addEventListener('mouseup',   canvasPointerUp);
+canvas.addEventListener('mouseleave', canvasPointerUp);
+
+// ═══════════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════════
+function rrect(ctx, x, y, w, h, r) {
+  if (r > w/2) r = w/2;
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y); ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r); ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h); ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r); ctx.quadraticCurveTo(x, y, x+r, y);
+  ctx.closePath();
+}
+function pad(n) { return String(n).padStart(2,'0'); }
+
+// ═══════════════════════════════════════════════════════════════
+//  KEYBOARD SHORTCUTS
+// ═══════════════════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  const k = e.key.toLowerCase();
+  if ((k === 'z' && (e.metaKey || e.ctrlKey)) || k === 'u') { e.preventDefault(); undoShot(); }
+  else if (k === 'n' || k === 'arrowright') nextShot();
+  else if (k === 'h') newHole();
+  else if (k === 'b') setRes('birdie', null);
+  else if (k === 'p') setRes('par', null);
+  else if (k === 'g') setRes('bogey', null);
+  else if (k === 'enter') takeSnapshot();
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════
+loadState();
+
+// Restore UI state
+document.querySelectorAll('[id^=asp]').forEach(b => {
+  const a = b.id.replace('asp','');
+  b.classList.toggle('on', a === S.aspect);
+});
+document.getElementById('unitYds').classList.toggle('on', S.unit !== 'M');
+document.getElementById('unitM').classList.toggle('on', S.unit === 'M');
+document.getElementById('btnActionSafe').classList.toggle('on', S.safeAction);
+document.getElementById('btnTitleSafe').classList.toggle('on', S.safeTitle);
+exportFmt = S.exportFmt || 'transparent';
+document.getElementById('fmtT').classList.toggle('on', exportFmt === 'transparent');
+document.getElementById('fmtB').classList.toggle('on', exportFmt === 'black');
+
+// Fonts + first render
+const fontLink = document.createElement('link');
+fontLink.rel = 'stylesheet';
+fontLink.href = 'https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600&display=swap';
+fontLink.onload = () => render();
+document.head.appendChild(fontLink);
+
+render();
+window.addEventListener('resize', () => render());
+</script>
+</body>
+</html>
