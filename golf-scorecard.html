@@ -1,0 +1,1350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Golf Overlay — PGA Style</title>
+<style>
+/* ─────────────────────────────────────────
+   DESIGN TOKENS
+───────────────────────────────────────── */
+:root {
+  /* App shell */
+  --ui-bg:      #070B10;
+  --ui-panel:   #0D1420;
+  --ui-card:    #111928;
+  --ui-border:  rgba(255,255,255,0.07);
+  --ui-border2: rgba(255,255,255,0.12);
+  --ui-txt:     rgba(255,255,255,0.90);
+  --ui-t2:      rgba(255,255,255,0.58);
+  --ui-t3:      rgba(255,255,255,0.35);
+  --ui-gold:    #C9A24A;
+  --ui-green:   #0B5A3C;
+  --ui-red:     #C0534A;
+  /* Overlay */
+  --ov-green1:  #0f6944;
+  --ov-green2:  #0B5A3C;
+  /* Result colours */
+  --rc-ace:    #F5C842;
+  --rc-eagle:  #2E8BFF;
+  --rc-birdie: #3FAE7C;
+  --rc-par:    #B8C2CC;
+  --rc-bogey:  #D1A14A;
+  --rc-double: #D06A5E;
+  --rc-worse:  #C0534A;
+  /* Shot type */
+  --st-tee:  rgba(255,255,255,0.88);
+  --st-app:  #7EB8F7;
+  --st-chip: #F0A830;
+  --st-putt: #B8A4F0;
+  /* UI */
+  --r:  10px;
+  --r2: 8px;
+  --f: ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+*,*::before,*::after { margin:0; padding:0; box-sizing:border-box; }
+html { height:100%; -webkit-text-size-adjust:100%; }
+body {
+  background: var(--ui-bg); color: var(--ui-txt);
+  font-family: var(--f); font-size: 14px;
+  height: 100%; display: flex; flex-direction: column;
+  overflow: hidden; -webkit-font-smoothing: antialiased;
+}
+button {
+  font-family: var(--f); cursor: pointer; border: none; outline: none;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+button:active { opacity: 0.78; transform: scale(0.96); }
+input, select {
+  font-family: var(--f); outline: none;
+  -webkit-tap-highlight-color: transparent; color: var(--ui-txt);
+}
+input[type=number] { -moz-appearance: textfield; }
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+/* ─────────────────────────────────────────
+   APP SHELL
+───────────────────────────────────────── */
+.app { display:flex; flex-direction:column; height:100%; max-height:100dvh; }
+
+/* Top bar */
+.topbar {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 14px; background:var(--ui-panel);
+  border-bottom:1px solid var(--ui-border); flex-shrink:0;
+  gap:8px; flex-wrap:wrap; min-height:48px;
+}
+.brand { display:flex; align-items:baseline; gap:8px; }
+.brand-name { font-size:13px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:var(--ui-gold); }
+.brand-ver  { font-size:9px; color:var(--ui-t3); letter-spacing:1px; }
+.bar-right  { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
+
+/* toolbar chip */
+.chip {
+  height:30px; padding:0 12px; border-radius:6px;
+  border:1px solid var(--ui-border);
+  background:rgba(255,255,255,0.04); color:var(--ui-t3);
+  font-size:10px; font-weight:700; letter-spacing:1px;
+  text-transform:uppercase; white-space:nowrap;
+  transition:background .12s, color .12s;
+}
+.chip:hover  { background:rgba(255,255,255,0.09); color:var(--ui-txt); }
+.chip.on     { background:rgba(201,162,74,0.18); border-color:var(--ui-gold); color:var(--ui-gold); }
+.chip.danger { border-color:rgba(192,83,74,0.35); color:rgba(192,83,74,0.8); }
+.chip.danger:hover { background:rgba(192,83,74,0.12); color:var(--ui-red); }
+.chip:active { transform:scale(0.95); opacity:1; }
+.bar-div { width:1px; height:18px; background:var(--ui-border); flex-shrink:0; }
+
+/* Preview area */
+.preview-area {
+  flex:1; display:flex; align-items:center; justify-content:center;
+  background:#050810; position:relative; overflow:hidden; min-height:0;
+  /* tap target for bg upload */
+  cursor:pointer;
+}
+.canvas-wrap { position:relative; flex-shrink:0; }
+#pcanvas   { display:block; width:100%; height:100%; cursor:default; }
+#pcanvas.ov-hover { cursor:grab; }
+#pcanvas.ov-drag  { cursor:grabbing; }
+#pcanvas.bg-drag  { cursor:grabbing; }
+/* Prevent tap on canvas from propagating to preview-area click */
+.canvas-wrap { pointer-events:all; }
+
+/* tap-to-upload hint */
+.tap-hint {
+  position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+  background:rgba(0,0,0,0.5); border:1px dashed rgba(255,255,255,0.18);
+  border-radius:8px; padding:6px 14px;
+  font-size:10px; letter-spacing:1.5px; text-transform:uppercase;
+  color:rgba(255,255,255,0.32); pointer-events:none; white-space:nowrap;
+  transition:opacity .2s;
+}
+.canvas-wrap.has-ref .tap-hint { opacity:0; }
+
+/* Hidden file input */
+#refIn { display:none; }
+
+/* Settings drawer */
+.drawer {
+  position:fixed; inset:0; z-index:100;
+  pointer-events:none; visibility:hidden;
+  transition:visibility 0s 0.28s;
+}
+.drawer.open { pointer-events:all; visibility:visible; transition:none; }
+.drawer-scrim {
+  position:absolute; inset:0; background:rgba(0,0,0,0.6);
+  opacity:0; transition:opacity .28s;
+}
+.drawer.open .drawer-scrim { opacity:1; }
+.drawer-panel {
+  position:absolute; right:0; top:0; bottom:0;
+  width:min(340px,93vw); background:var(--ui-panel);
+  border-left:1px solid var(--ui-border);
+  display:flex; flex-direction:column;
+  transform:translateX(100%);
+  transition:transform .28s cubic-bezier(.4,0,.2,1);
+  overflow:hidden;
+}
+.drawer.open .drawer-panel { transform:none; }
+.drawer-hdr {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 16px 13px; border-bottom:1px solid var(--ui-border); flex-shrink:0;
+}
+.drawer-title { font-size:12px; font-weight:700; letter-spacing:2.5px; text-transform:uppercase; color:var(--ui-gold); }
+.drawer-close {
+  width:32px; height:32px; border-radius:6px;
+  background:rgba(255,255,255,0.06); color:var(--ui-t2); font-size:15px;
+  display:flex; align-items:center; justify-content:center;
+  border:1px solid var(--ui-border);
+}
+.drawer-body {
+  flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:14px 16px 24px; display:flex; flex-direction:column; gap:20px;
+}
+.ds { display:flex; flex-direction:column; gap:9px; }
+.ds-lbl { font-size:9px; letter-spacing:2.5px; text-transform:uppercase; color:var(--ui-t3); font-weight:600; }
+.ds-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.ds-divider { height:1px; background:var(--ui-border); }
+
+/* Controls panel */
+.ctrl {
+  flex-shrink:0; background:var(--ui-panel);
+  border-top:1px solid var(--ui-border);
+  overflow-y:auto; -webkit-overflow-scrolling:touch;
+  max-height:48svh;
+}
+.csec {
+  padding:10px 14px 12px; border-bottom:1px solid var(--ui-border);
+  display:flex; flex-direction:column; gap:9px;
+}
+.csec:last-child { border-bottom:none; }
+.clbl { font-size:8px; letter-spacing:3px; text-transform:uppercase; color:var(--ui-t3); font-weight:600; }
+
+/* Spinner */
+.spin { display:flex; align-items:center; gap:4px; }
+.sp-btn {
+  width:44px; height:44px; background:var(--ui-card);
+  border:1px solid var(--ui-border); border-radius:var(--r2);
+  color:var(--ui-txt); font-size:22px; font-weight:300;
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+}
+.sp-btn:hover { background:rgba(255,255,255,0.1); }
+.sp-btn:active { transform:scale(0.93); opacity:1; background:rgba(255,255,255,0.15); }
+.sp-val {
+  width:58px; height:44px; background:var(--ui-card);
+  border:1px solid var(--ui-border); border-radius:var(--r2);
+  text-align:center; font-size:22px; font-weight:800;
+}
+.sp-val:focus { border-color:var(--ui-gold); }
+.sp-unit { font-size:10px; color:var(--ui-t3); letter-spacing:1px; }
+
+/* Par buttons */
+.par-row { display:flex; gap:5px; }
+.par-btn {
+  flex:1; height:44px; background:var(--ui-card);
+  border:1px solid var(--ui-border); border-radius:var(--r2);
+  color:rgba(255,255,255,0.5); font-size:16px; font-weight:700;
+  transition:background .12s, color .12s, border-color .12s;
+}
+.par-btn:hover { background:rgba(255,255,255,0.1); color:var(--ui-txt); }
+.par-btn:active { transform:scale(0.95); opacity:1; }
+.par-btn.on { background:var(--ui-green); border-color:var(--ui-green); color:#fff; }
+
+/* Shot type buttons */
+.st-row { display:flex; gap:5px; flex-wrap:wrap; }
+.st-btn {
+  flex:1; min-width:70px; height:42px;
+  background:var(--ui-card); border:1px solid var(--ui-border);
+  border-radius:var(--r2); color:rgba(255,255,255,0.48);
+  font-size:11px; font-weight:700; letter-spacing:0.8px; text-transform:uppercase;
+  display:flex; align-items:center; justify-content:center; gap:4px;
+  transition:all .12s;
+}
+.st-btn:hover { background:rgba(255,255,255,0.09); color:var(--ui-txt); }
+.st-btn:active { transform:scale(0.95); opacity:1; }
+.st-btn.on-TEE      { background:rgba(255,255,255,0.14); border-color:rgba(255,255,255,0.40); color:#fff; }
+.st-btn.on-APPROACH { background:rgba(126,184,247,0.14); border-color:#7EB8F7; color:#7EB8F7; }
+.st-btn.on-CHIP     { background:rgba(240,168,48,0.14);  border-color:#F0A830; color:#F0A830; }
+.st-btn.on-PUTT     { background:rgba(184,164,240,0.14); border-color:#B8A4F0; color:#B8A4F0; }
+.auto-tag {
+  font-size:8px; padding:2px 7px; border-radius:6px;
+  background:rgba(201,162,74,0.14); border:1px solid rgba(201,162,74,0.28);
+  color:var(--ui-gold); letter-spacing:1px; font-weight:700; transition:opacity .2s;
+}
+
+/* Result buttons */
+.res-row { display:flex; gap:4px; flex-wrap:wrap; }
+.res-btn {
+  flex:1; min-width:42px; height:36px; padding:0 6px;
+  background:var(--ui-card); border:1px solid var(--ui-border);
+  border-radius:var(--r2); color:rgba(255,255,255,0.4);
+  font-size:10px; font-weight:700; letter-spacing:0.5px; text-transform:uppercase;
+  transition:all .12s;
+}
+.res-btn:hover { background:rgba(255,255,255,0.09); color:var(--ui-txt); }
+.res-btn:active { transform:scale(0.95); opacity:1; }
+.res-btn.on-ace,.res-btn.on-eagle { background:rgba(245,200,66,0.14);  border-color:var(--rc-ace);    color:var(--rc-ace); }
+.res-btn.on-birdie { background:rgba(63,174,124,0.14);  border-color:var(--rc-birdie); color:var(--rc-birdie); }
+.res-btn.on-par    { background:rgba(184,194,204,0.12); border-color:var(--rc-par);    color:var(--rc-par); }
+.res-btn.on-bogey  { background:rgba(209,161,74,0.14);  border-color:var(--rc-bogey);  color:var(--rc-bogey); }
+.res-btn.on-double,.res-btn.on-worse { background:rgba(208,106,94,0.13); border-color:var(--rc-double); color:var(--rc-double); }
+
+/* Action buttons */
+.act-row { display:flex; gap:6px; align-items:stretch; flex-wrap:wrap; }
+.btn-next {
+  flex:2; min-width:130px; height:48px;
+  background:var(--ui-green); border-radius:var(--r); color:#fff;
+  font-size:14px; font-weight:800; letter-spacing:2px; text-transform:uppercase;
+  display:flex; align-items:center; justify-content:center; gap:7px;
+  transition:background .12s;
+}
+.btn-next:hover { background:#0d6e48; }
+.btn-next:active { opacity:0.85; transform:scale(0.97); }
+.btn-newhole {
+  flex:1; min-width:88px; height:48px;
+  background:rgba(201,162,74,0.11); border:1px solid rgba(201,162,74,0.28);
+  border-radius:var(--r); color:var(--ui-gold);
+  font-size:11px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase;
+  transition:background .12s;
+}
+.btn-newhole:hover { background:rgba(201,162,74,0.2); }
+.btn-newhole:active { opacity:0.85; transform:scale(0.97); }
+.btn-icon {
+  width:48px; height:48px; background:var(--ui-card);
+  border:1px solid var(--ui-border); border-radius:var(--r);
+  color:rgba(255,255,255,0.48); font-size:17px;
+  display:flex; align-items:center; justify-content:center;
+  flex-shrink:0; transition:all .12s;
+}
+.btn-icon:hover { background:rgba(255,255,255,0.1); color:var(--ui-txt); }
+.btn-icon:disabled { opacity:0.2; cursor:default; }
+.btn-icon:disabled:active { transform:none; opacity:0.2; }
+
+/* Export row */
+.exp-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.btn-export {
+  height:44px; padding:0 20px;
+  background:linear-gradient(135deg,#C9A24A,#E8C96A,#C9A24A);
+  border-radius:var(--r); color:#1a1000;
+  font-size:13px; font-weight:800; letter-spacing:2px; text-transform:uppercase;
+  display:flex; align-items:center; gap:7px;
+  box-shadow:0 2px 14px rgba(201,162,74,0.25); white-space:nowrap;
+  transition:box-shadow .15s;
+}
+.btn-export:hover { box-shadow:0 4px 22px rgba(201,162,74,0.4); }
+.btn-export:active { transform:scale(0.97); opacity:0.9; }
+.btn-export:disabled { opacity:0.45; cursor:default; }
+.btn-export:disabled:active { transform:none; }
+.btn-export svg { width:13px; height:13px; flex-shrink:0; }
+.fmt-btn {
+  height:34px; padding:0 12px; background:var(--ui-card);
+  border:1px solid var(--ui-border); border-radius:6px;
+  color:var(--ui-t3); font-size:10px; font-weight:600; letter-spacing:0.8px;
+  transition:all .12s;
+}
+.fmt-btn:hover { background:rgba(255,255,255,0.1); color:var(--ui-txt); }
+.fmt-btn:active { transform:scale(0.95); opacity:1; }
+.fmt-btn.on { background:rgba(201,162,74,0.14); border-color:var(--ui-gold); color:var(--ui-gold); }
+.res-sel {
+  height:34px; padding:0 8px; background:var(--ui-card);
+  border:1px solid var(--ui-border); border-radius:6px;
+  font-size:11px; cursor:pointer;
+}
+.exp-fb { font-size:10px; letter-spacing:1.5px; color:var(--ui-t3); opacity:0; transition:opacity .3s; white-space:nowrap; }
+.exp-fb.on { opacity:1; }
+
+/* Checkbox */
+.chk {
+  display:flex; align-items:center; gap:7px; cursor:pointer;
+  padding:3px 5px; border-radius:4px; transition:background .12s;
+  -webkit-tap-highlight-color:transparent; touch-action:manipulation; min-height:30px;
+}
+.chk:hover { background:rgba(255,255,255,0.05); }
+.chk-b {
+  width:18px; height:18px; min-width:18px;
+  border:1.5px solid rgba(255,255,255,0.22); border-radius:4px;
+  background:rgba(255,255,255,0.04);
+  display:flex; align-items:center; justify-content:center;
+  transition:all .12s; pointer-events:none;
+}
+.chk-b svg { display:none; width:10px; height:10px; }
+.chk.on .chk-b { background:var(--ui-gold); border-color:var(--ui-gold); }
+.chk.on .chk-b svg { display:block; }
+.chk.on .chk-lbl { color:rgba(255,255,255,0.85); }
+.chk-lbl { font-size:10.5px; letter-spacing:1.5px; text-transform:uppercase; color:var(--ui-t3); transition:color .12s; white-space:nowrap; }
+
+/* Position buttons */
+.pos-row { display:flex; gap:4px; flex-wrap:wrap; }
+.pos-btn {
+  height:30px; padding:0 11px; background:var(--ui-card);
+  border:1px solid var(--ui-border); border-radius:6px; color:var(--ui-t3);
+  font-size:10px; font-weight:700; letter-spacing:0.5px; transition:all .12s;
+}
+.pos-btn:hover { background:rgba(255,255,255,0.1); color:var(--ui-txt); }
+.pos-btn:active { transform:scale(0.95); opacity:1; }
+.pos-btn.on { background:rgba(201,162,74,0.14); border-color:var(--ui-gold); color:var(--ui-gold); }
+.inset-in {
+  width:58px; height:30px; background:var(--ui-card);
+  border:1px solid var(--ui-border); border-radius:6px;
+  text-align:center; font-size:13px; font-weight:700;
+}
+.inset-in:focus { border-color:var(--ui-gold); }
+
+/* Status bar */
+.sbar {
+  display:flex; align-items:center; gap:8px; padding:5px 14px;
+  background:var(--ui-panel); border-top:1px solid var(--ui-border);
+  font-size:10px; letter-spacing:1px; color:var(--ui-t3); flex-shrink:0;
+}
+.live { width:6px; height:6px; border-radius:50%; background:#22c55e; box-shadow:0 0 5px #22c55e; animation:lp 1.6s ease-in-out infinite; flex-shrink:0; }
+@keyframes lp { 0%,100%{opacity:1}50%{opacity:.28} }
+
+input[type=range] { accent-color:var(--ui-gold); cursor:pointer; }
+
+@media(max-width:480px) {
+  .topbar { padding:6px 10px; }
+  .csec { padding:9px 10px 11px; }
+  .brand-ver { display:none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ══════════ TOP BAR ══════════ -->
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-name">Golf Overlay</span>
+    <span class="brand-ver">PGA Style</span>
+  </div>
+  <div class="bar-right">
+    <div style="display:flex;gap:3px">
+      <button class="chip on" id="asp169" onclick="setAsp('169')">16:9</button>
+      <button class="chip"    id="asp916" onclick="setAsp('916')">9:16</button>
+      <button class="chip"    id="asp11"  onclick="setAsp('11')">1:1</button>
+    </div>
+    <div class="bar-div"></div>
+    <button class="chip" id="btnSafe" onclick="toggleSafe()">Safe Zone</button>
+    <div class="bar-div"></div>
+    <button class="chip" onclick="openDrawer()">⚙ Settings</button>
+  </div>
+</header>
+
+<!-- ══════════ PREVIEW ══════════ -->
+<!-- preview-area handles tap-to-upload for ref image when canvas is NOT clicked -->
+<div class="preview-area" id="previewArea" onclick="onPreviewAreaTap(event)">
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="pcanvas"></canvas>
+    <div class="tap-hint" id="tapHint">Tap empty area to add reference image</div>
+  </div>
+</div>
+<input type="file" id="refIn" accept="image/*" onchange="loadRef(this)">
+
+<!-- ══════════ SETTINGS DRAWER ══════════ -->
+<div class="drawer" id="drawer">
+  <div class="drawer-scrim" onclick="closeDrawer()"></div>
+  <div class="drawer-panel">
+    <div class="drawer-hdr">
+      <span class="drawer-title">Settings</span>
+      <button class="drawer-close" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="drawer-body">
+
+      <!-- Overlay Position -->
+      <div class="ds">
+        <div class="ds-lbl">Overlay Position</div>
+        <div class="pos-row" id="posBtns">
+          <button class="pos-btn on" data-pos="TR" onclick="setPos('TR')">↗ Top Right</button>
+          <button class="pos-btn"    data-pos="TL" onclick="setPos('TL')">↖ Top Left</button>
+          <button class="pos-btn"    data-pos="BL" onclick="setPos('BL')">↙ Bot Left</button>
+          <button class="pos-btn"    data-pos="BR" onclick="setPos('BR')">↘ Bot Right</button>
+          <button class="pos-btn"    data-pos="C"  onclick="setPos('C')">⊙ Center</button>
+        </div>
+        <div class="ds-row">
+          <span style="font-size:10px;color:var(--ui-t3)">Inset (px at 1080p)</span>
+          <input class="inset-in" id="insetIn" type="number" min="0" max="240" value="64" oninput="setInset(this.value)">
+        </div>
+        <div style="font-size:9px;color:var(--ui-t3)">Drag overlay in preview to reposition</div>
+      </div>
+
+      <div class="ds-divider"></div>
+
+      <!-- Reference Background -->
+      <div class="ds">
+        <div class="ds-lbl">Reference Background</div>
+        <div class="ds-row">
+          <button class="chip" onclick="document.getElementById('refIn').click()">📷 Load Image</button>
+          <button class="chip danger" id="btnClrRef" style="display:none" onclick="clearRef()">✕ Clear</button>
+        </div>
+        <div id="refSettings" style="display:none;flex-direction:column;gap:10px">
+          <div class="ds-row">
+            <span style="font-size:10px;color:var(--ui-t3);min-width:56px">Opacity</span>
+            <input type="range" id="refOpSlider" min="0" max="100" value="40" oninput="setRefOp(this.value)" style="flex:1;min-width:80px">
+            <span style="font-size:10px;color:var(--ui-t3);min-width:32px" id="refOpVal">40%</span>
+          </div>
+          <div class="ds-row">
+            <span style="font-size:10px;color:var(--ui-t3);min-width:56px">Scale</span>
+            <input type="range" id="refScSlider" min="50" max="220" value="100" oninput="setRefSc(this.value)" style="flex:1;min-width:80px">
+          </div>
+          <div class="ds-row">
+            <button class="chip" onclick="resetRef()">Reset Pan/Zoom</button>
+            <button class="chip" id="btnRefVis" onclick="toggleRefVis()">Hide</button>
+          </div>
+          <div class="ds-row">
+            <div class="chk" id="chkIncRef" onclick="tog('exportIncRef')">
+              <span class="chk-b"><svg viewBox="0 0 10 8" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 4,7 9,1"/></svg></span>
+              <span class="chk-lbl">Include in export</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ds-divider"></div>
+
+      <!-- Distance unit -->
+      <div class="ds">
+        <div class="ds-lbl">Distance Unit</div>
+        <div class="ds-row">
+          <button class="chip on" id="unitYds" onclick="setUnit('YDS')">Yards</button>
+          <button class="chip"    id="unitM"   onclick="setUnit('M')">Metres</button>
+        </div>
+      </div>
+
+      <div class="ds-divider"></div>
+
+      <!-- Overlay size -->
+      <div class="ds">
+        <div class="ds-lbl">Overlay Scale</div>
+        <div class="ds-row">
+          <button class="chip" id="scSm"  onclick="setOvSc(0.75,'scSm')">Small</button>
+          <button class="chip on" id="scMd" onclick="setOvSc(1.0,'scMd')">Medium</button>
+          <button class="chip" id="scLg"  onclick="setOvSc(1.2,'scLg')">Large</button>
+        </div>
+      </div>
+
+      <div class="ds-divider"></div>
+
+      <!-- Round management -->
+      <div class="ds">
+        <div class="ds-lbl">Round Management</div>
+        <button class="chip danger" onclick="if(confirm('Reset all state?'))resetRound()">Reset Round</button>
+      </div>
+
+      <div class="ds-divider"></div>
+
+      <!-- Keyboard shortcuts -->
+      <div class="ds">
+        <div class="ds-lbl">Keyboard Shortcuts</div>
+        <div style="font-size:10px;color:var(--ui-t3);line-height:2">
+          N / → &nbsp; Next Shot<br>
+          U / Ctrl+Z &nbsp; Undo Shot<br>
+          H &nbsp; New Hole<br>
+          B &nbsp; Birdie &nbsp;·&nbsp; P &nbsp; Par &nbsp;·&nbsp; G &nbsp; Bogey<br>
+          Enter &nbsp; Export PNG
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ CONTROLS ══════════ -->
+<div class="ctrl" id="ctrl">
+
+  <!-- HOLE + PAR + YARDS -->
+  <div class="csec">
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">
+
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <div class="clbl">Hole</div>
+        <div class="spin">
+          <button class="sp-btn" onclick="adj('holeNumber',-1)">−</button>
+          <input class="sp-val" id="inHole" type="number" min="1" max="18" value="1" oninput="inp('holeNumber',this.value,1,18)">
+          <button class="sp-btn" onclick="adj('holeNumber',1)">+</button>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <div class="clbl">Par</div>
+        <div class="par-row">
+          <button class="par-btn" data-p="3" onclick="setPar(3)">3</button>
+          <button class="par-btn on" data-p="4" onclick="setPar(4)">4</button>
+          <button class="par-btn" data-p="5" onclick="setPar(5)">5</button>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:5px;flex:1;min-width:120px">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div class="clbl" id="yardsLbl">Yards</div>
+          <div class="chk on" id="chkYards" onclick="tog('showYards')">
+            <span class="chk-b"><svg viewBox="0 0 10 8" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 4,7 9,1"/></svg></span>
+            <span class="chk-lbl">Show</span>
+          </div>
+        </div>
+        <div class="spin">
+          <button class="sp-btn" onclick="adj('yards',-5)">−</button>
+          <input class="sp-val" id="inYards" type="number" min="0" max="700" value="385" oninput="inp('yards',this.value,0,700)" style="width:64px">
+          <button class="sp-btn" onclick="adj('yards',5)">+</button>
+          <span class="sp-unit" id="unitTag">YDS</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- SHOT TYPE -->
+  <div class="csec">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="clbl">Shot Type</div>
+        <span class="auto-tag" id="autoTag">AUTO</span>
+      </div>
+      <div class="chk on" id="chkStatus" onclick="tog('showStatus')">
+        <span class="chk-b"><svg viewBox="0 0 10 8" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 4,7 9,1"/></svg></span>
+        <span class="chk-lbl">Show</span>
+      </div>
+    </div>
+    <div class="st-row">
+      <button class="st-btn" data-st="TEE"      onclick="setST('TEE')">🏌 Tee</button>
+      <button class="st-btn" data-st="APPROACH" onclick="setST('APPROACH')">🎯 Approach</button>
+      <button class="st-btn" data-st="CHIP"     onclick="setST('CHIP')">⛳ Chip</button>
+      <button class="st-btn" data-st="PUTT"     onclick="setST('PUTT')">🟣 Putt</button>
+    </div>
+  </div>
+
+  <!-- RESULT -->
+  <div class="csec">
+    <div class="clbl">Hole Result <span style="color:var(--ui-t3);font-weight:400;letter-spacing:1px">(select when done)</span></div>
+    <div class="res-row">
+      <button class="res-btn" data-r="ace"    onclick="setRes('ace')">⭐ Ace</button>
+      <button class="res-btn" data-r="eagle"  onclick="setRes('eagle')">🦅 Eagle</button>
+      <button class="res-btn" data-r="birdie" onclick="setRes('birdie')">🐦 Birdie</button>
+      <button class="res-btn" data-r="par"    onclick="setRes('par')">Par</button>
+      <button class="res-btn" data-r="bogey"  onclick="setRes('bogey')">Bogey</button>
+      <button class="res-btn" data-r="double" onclick="setRes('double')">Dbl</button>
+      <button class="res-btn" data-r="worse"  onclick="setRes('worse')">+3</button>
+    </div>
+  </div>
+
+  <!-- ACTIONS + EXPORT -->
+  <div class="csec">
+    <div class="act-row">
+      <button class="btn-next" onclick="nextShot()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        NEXT SHOT
+      </button>
+      <button class="btn-newhole" onclick="newHole()">⛳ New Hole</button>
+      <button class="btn-icon" id="btnUndoShot" onclick="undoShot()" title="Prev Shot (U)" disabled>↩</button>
+      <button class="btn-icon" id="btnUndoHole" onclick="undoHole()" title="Prev Hole">⌫</button>
+    </div>
+    <div class="exp-row">
+      <button class="btn-export" id="btnExp" onclick="doExport()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        EXPORT PNG
+      </button>
+      <button class="fmt-btn on" id="fmtTransp" onclick="setFmt('transparent')">Transparent</button>
+      <button class="fmt-btn"    id="fmtBlack"  onclick="setFmt('black')">Black BG</button>
+      <select class="res-sel" id="resSel"><option value="1080">1080p</option><option value="2160">4K</option></select>
+      <span class="exp-fb" id="expFb"></span>
+    </div>
+  </div>
+
+</div><!-- /ctrl -->
+
+<!-- ══════════ STATUS BAR ══════════ -->
+<div class="sbar">
+  <div class="live"></div>
+  <span id="sbText">Hole 1 · Par 4 · Shot 1 · Tee Shot</span>
+  <span style="margin-left:auto;font-size:9px;opacity:.4;white-space:nowrap">N=Next · U=Undo · B/P/G=Result</span>
+  <span id="sbLS" style="font-size:9px;opacity:.4;margin-left:8px">LS✓</span>
+</div>
+
+</div><!-- /app -->
+
+<script>
+'use strict';
+/* ══════════════════════════════════════════════════
+   STATE MODULE
+══════════════════════════════════════════════════ */
+const PAR_DEF  = { 3:165, 4:385, 5:520 };
+const TYPE_LBL = { TEE:'TEE SHOT', APPROACH:'APPROACH', CHIP:'CHIP', PUTT:'PUTTING' };
+const TYPE_COL = { TEE:'rgba(255,255,255,.88)', APPROACH:'#7EB8F7', CHIP:'#F0A830', PUTT:'#B8A4F0' };
+const RES_LBL  = { ace:'HOLE IN ONE', eagle:'EAGLE', birdie:'BIRDIE', par:'PAR', bogey:'BOGEY', double:'DOUBLE BOGEY', worse:'+3' };
+const RES_COL  = { ace:'#F5C842', eagle:'#2E8BFF', birdie:'#3FAE7C', par:'#B8C2CC', bogey:'#D1A14A', double:'#D06A5E', worse:'#C0534A' };
+const RES_BGA  = { ace:.18, eagle:.18, birdie:.16, par:.10, bogey:.14, double:.14, worse:.14 };
+const ASP_RATIO = { '169':16/9, '916':9/16, '11':1 };
+const SF_FONT   = 'ui-sans-serif,system-ui,-apple-system,"SF Pro Display","Segoe UI",Roboto,Helvetica,Arial,sans-serif';
+
+// Auto shot-type inference
+function inferType(par, shot) {
+  if (shot === 1) return 'TEE';
+  if (shot - par >= 0) return 'PUTT';
+  if (par === 3) return 'PUTT';
+  if (par === 4) return shot === 2 ? 'APPROACH' : 'PUTT';
+  if (par === 5) { if (shot===2) return 'APPROACH'; if (shot===3) return 'CHIP'; return 'PUTT'; }
+  return 'TEE';
+}
+
+// Hex → rgb triplet string for rgba()
+function hexRgb(hex) {
+  return `${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)}`;
+}
+
+const DFLT = {
+  holeNumber:1, par:4, yards:385, holeYards:385,
+  shotIndex:1, shotType:'TEE', manualType:false, holeResult:null,
+  showYards:true, showStatus:true, unit:'YDS',
+  position:'TR', inset:64, customX:null, customY:null,
+  safeOn:false, aspect:'169', fmt:'transparent', exportIncRef:false,
+  ovScale:1.0,
+};
+
+let S = { ...DFLT };
+
+// Undo stacks
+let shotStack = [];  // full state snapshots per action
+let holeStack = [];  // checkpoints per hole-start
+
+// Ref image state (not persisted to LS)
+let refImg = null, refVisible = true, refOpacity = 0.4, refScaleMod = 1;
+let refOffX = 0, refOffY = 0;
+
+/* ── Persistence ── */
+let _saveTimer = null;
+function queueSave() {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(persistState, 350);
+}
+function persistState() {
+  try {
+    const data = { ...S }; delete data.exportIncRef;
+    localStorage.setItem('golf_pga', JSON.stringify(data));
+    el('sbLS').textContent = 'LS✓';
+  } catch(e) { el('sbLS').textContent = 'LS✗'; }
+}
+function loadState() {
+  try { const raw = localStorage.getItem('golf_pga'); if (raw) S = { ...DFLT, ...JSON.parse(raw) }; } catch(e) {}
+}
+
+/* ── Commit ── */
+function commit(partial) {
+  shotStack.push({ ...S });
+  if (shotStack.length > 80) shotStack.shift();
+  Object.assign(S, partial);
+  queueSave(); render();
+}
+
+/* ── Core actions ── */
+function undoShot() {
+  if (!shotStack.length) return;
+  S = shotStack.pop(); queueSave(); render();
+}
+function undoHole() {
+  if (!holeStack.length) return;
+  S = holeStack.pop(); shotStack = []; queueSave(); render();
+}
+function newHole() {
+  holeStack.push({ ...S });
+  if (holeStack.length > 20) holeStack.shift();
+  shotStack = [];
+  const next = S.holeNumber >= 18 ? 1 : S.holeNumber + 1;
+  S = {
+    ...DFLT,
+    holeNumber:next, par:S.par, yards:PAR_DEF[S.par], holeYards:PAR_DEF[S.par],
+    unit:S.unit, position:S.position, inset:S.inset,
+    customX:S.customX, customY:S.customY,
+    safeOn:S.safeOn, aspect:S.aspect, fmt:S.fmt,
+    showYards:S.showYards, showStatus:S.showStatus, ovScale:S.ovScale,
+  };
+  queueSave(); render();
+}
+function nextShot() {
+  const n = S.shotIndex + 1;
+  commit({ shotIndex:n, shotType:S.manualType ? S.shotType : inferType(S.par, n), manualType:false });
+}
+function resetRound() { S = { ...DFLT }; shotStack = []; holeStack = []; queueSave(); render(); }
+
+/* ── Control handlers ── */
+function adj(key, d) {
+  const rngs = { holeNumber:[1,18], yards:[0,700] };
+  const [mn, mx] = rngs[key]||[0,9999];
+  commit({ [key]: Math.max(mn, Math.min(mx, (S[key]||0)+d)) });
+}
+function inp(key, v, mn, mx) {
+  const n = parseInt(v); if (!isNaN(n)) commit({ [key]: Math.max(mn, Math.min(mx,n)) });
+}
+function tog(key)  { commit({ [key]: !S[key] }); }
+function setPar(p) { commit({ par:p, yards:PAR_DEF[p], holeYards:PAR_DEF[p] }); }
+function setST(t)  { commit({ shotType:t, manualType:true }); }
+function setRes(r) { commit({ holeResult: S.holeResult === r ? null : r }); }
+function setAsp(a) { commit({ aspect:a }); }
+function setUnit(u){ commit({ unit:u }); }
+function setPos(p) { commit({ position:p, customX:null, customY:null }); }
+function setInset(v){ commit({ inset: Math.max(0, Math.min(240, parseInt(v)||0)) }); }
+function setFmt(f) { commit({ fmt:f }); }
+function toggleSafe() { commit({ safeOn:!S.safeOn }); }
+function setOvSc(s, btnId) {
+  commit({ ovScale:s });
+  ['scSm','scMd','scLg'].forEach(id => el(id).classList.toggle('on', id === btnId));
+}
+
+/* ── Ref image ── */
+function onPreviewAreaTap(evt) {
+  // Only open file picker if click wasn't on the canvas (canvas handles its own clicks)
+  if (!refImg) {
+    // Tap outside canvas or canvas without ref → open picker
+    const wrap = el('canvasWrap');
+    if (!wrap.contains(evt.target) || evt.target === wrap) {
+      el('refIn').click();
+    }
+  }
+}
+function loadRef(input) {
+  const file = input.files[0]; if (!file) return;
+  if (refImg && refImg._url) URL.revokeObjectURL(refImg._url);
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    refImg = img; refImg._url = url;
+    refOffX = 0; refOffY = 0; refScaleMod = 1; refVisible = true;
+    el('refSettings').style.display = 'flex';
+    el('btnClrRef').style.display = '';
+    el('canvasWrap').classList.add('has-ref');
+    el('btnRefVis').textContent = 'Hide';
+    render();
+  };
+  img.src = url; input.value = '';
+}
+function clearRef() {
+  if (refImg && refImg._url) URL.revokeObjectURL(refImg._url);
+  refImg = null;
+  el('refSettings').style.display = 'none';
+  el('btnClrRef').style.display = 'none';
+  el('canvasWrap').classList.remove('has-ref');
+  render();
+}
+function setRefOp(v) { refOpacity = parseFloat(v)/100; el('refOpVal').textContent = v+'%'; render(); }
+function setRefSc(v) { refScaleMod = parseFloat(v)/100; render(); }
+function resetRef()  { refOffX=0; refOffY=0; refScaleMod=1; el('refScSlider').value=100; render(); }
+function toggleRefVis() { refVisible=!refVisible; el('btnRefVis').textContent=refVisible?'Hide':'Show'; render(); }
+
+/* ── Drawer ── */
+function openDrawer()  { el('drawer').classList.add('open'); }
+function closeDrawer() { el('drawer').classList.remove('open'); }
+
+/* ── Helpers ── */
+function el(id) { return document.getElementById(id); }
+function pad(n) { return String(n).padStart(2,'0'); }
+
+/* ══════════════════════════════════════════════════
+   RENDERER MODULE
+   Single drawOverlay(ctx, cfg) — shared by preview & export.
+══════════════════════════════════════════════════ */
+
+// Overlay natural dimensions at design scale=1 (= 1080p)
+// Card ~820×150 at 1080p, placed top-right with 64px inset
+const OVW = 820;   // full card width
+const OVH = 150;   // full card height
+const OV_BADGE_W = 130;
+const OV_DIV_W   = 3;
+const OV_INFO_W  = OVW - OV_BADGE_W - OV_DIV_W;
+const OV_TOP_H   = 110;
+const OV_BOT_H   = OVH - OV_TOP_H;
+
+function drawOverlay(ctx, cfg) {
+  const { scale:sc, ox, oy } = cfg;
+
+  const W  = OVW * sc, H  = OVH * sc;
+  const bW = OV_BADGE_W * sc;
+  const dW = OV_DIV_W   * sc;
+  const iW = OV_INFO_W  * sc;
+  const iX = ox + bW + dW;
+  const tH = OV_TOP_H * sc;
+  const bH = OV_BOT_H * sc;
+
+  /* ── Drop shadow (on-screen preview only — keep clean for export) ── */
+  if (!cfg.forExport) {
+    ctx.save();
+    ctx.shadowColor   = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur    = 32 * sc;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 8 * sc;
+    ctx.fillStyle = 'rgba(0,0,0,0.001)';
+    rrect(ctx, ox, oy, W, H, 12*sc); ctx.fill();
+    ctx.restore();
+  }
+
+  /* ── Badge (green left block) ── */
+  ctx.save();
+  rrectLeft(ctx, ox, oy, bW, H, 12*sc);
+  const gBadge = ctx.createLinearGradient(ox, oy, ox, oy+H);
+  gBadge.addColorStop(0, '#0f6944');
+  gBadge.addColorStop(1, '#0B5A3C');
+  ctx.fillStyle = gBadge; ctx.fill();
+  // Top-edge highlight
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1*sc;
+  rrectLeft(ctx, ox+0.5*sc, oy+0.5*sc, bW-0.5*sc, H-1*sc, 12*sc); ctx.stroke();
+  ctx.restore();
+
+  // HOLE label
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.42)';
+  ctx.font = `500 ${9*sc}px ${SF_FONT}`; ctx.letterSpacing = (2*sc)+'px';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('HOLE', ox+bW/2, oy+20*sc);
+
+  // Big hole number
+  ctx.fillStyle = 'rgba(255,255,255,0.96)';
+  ctx.font = `800 ${72*sc}px ${SF_FONT}`; ctx.letterSpacing = (-2*sc)+'px';
+  ctx.fillText(String(S.holeNumber), ox+bW/2, oy+74*sc);
+
+  // PAR x
+  ctx.fillStyle = '#C9A24A';
+  ctx.font = `600 ${13*sc}px ${SF_FONT}`; ctx.letterSpacing = (1.5*sc)+'px';
+  ctx.fillText('PAR '+S.par, ox+bW/2, oy+120*sc);
+  ctx.restore();
+
+  /* ── Gold vertical rule (with gradient shimmer) ── */
+  const gDiv = ctx.createLinearGradient(ox+bW, oy, ox+bW, oy+H);
+  gDiv.addColorStop(0,  'rgba(201,162,74,0.85)');
+  gDiv.addColorStop(0.5,'#C9A24A');
+  gDiv.addColorStop(1,  'rgba(201,162,74,0.5)');
+  ctx.fillStyle = gDiv;
+  ctx.fillRect(ox+bW, oy, dW, H);
+
+  /* ── Info panel (dark block) ── */
+  ctx.save();
+  rrectRight(ctx, iX, oy, iW, H, 12*sc);
+  const gInfo = ctx.createLinearGradient(iX, oy, iX, oy+H);
+  gInfo.addColorStop(0, '#111822');
+  gInfo.addColorStop(1, '#0E141C');
+  ctx.fillStyle = gInfo; ctx.fill();
+  // Subtle border
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1*sc;
+  rrectRight(ctx, iX+0.5*sc, oy+0.5*sc, iW-1*sc, H-1*sc, 12*sc); ctx.stroke();
+  ctx.restore();
+
+  // Top highlight strip on info panel
+  const hlGrad = ctx.createLinearGradient(iX, oy, iX+iW, oy);
+  hlGrad.addColorStop(0,  'rgba(255,255,255,0.0)');
+  hlGrad.addColorStop(0.3,'rgba(255,255,255,0.04)');
+  hlGrad.addColorStop(1,  'rgba(255,255,255,0.0)');
+  ctx.fillStyle = hlGrad;
+  ctx.fillRect(iX, oy, iW, 2*sc);
+
+  // Top/bottom divider
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fillRect(iX, oy+tH, iW, 1*sc);
+  ctx.fillStyle = 'rgba(0,0,0,0.24)';
+  ctx.fillRect(iX, oy+tH+1*sc, iW, bH-1*sc);
+
+  const pX = iX + 18*sc;
+
+  /* ── Yards / To Pin (primary info) ── */
+  if (S.showYards) {
+    const disp     = S.unit === 'M' ? Math.round(S.yards * 0.9144) : S.yards;
+    const yardsStr = String(disp);
+    const yardsLbl = S.shotIndex === 1 ? 'HOLE' : 'TO PIN';
+
+    ctx.save();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillStyle = 'rgba(255,255,255,0.40)';
+    ctx.font = `500 ${10*sc}px ${SF_FONT}`; ctx.letterSpacing = (2*sc)+'px';
+    ctx.fillText(yardsLbl, pX, oy+14*sc);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.94)';
+    ctx.font = `800 ${64*sc}px ${SF_FONT}`; ctx.letterSpacing = (-1.5*sc)+'px';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(yardsStr, pX, oy+tH/2+4*sc);
+    const yw = ctx.measureText(yardsStr).width;
+
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    ctx.font = `500 ${13*sc}px ${SF_FONT}`; ctx.letterSpacing = '0px';
+    ctx.fillText(S.unit, pX + yw + 5*sc, oy+tH/2+12*sc);
+    ctx.restore();
+  }
+
+  /* ── Shot type label (top-right corner of info panel) ── */
+  if (S.showStatus) {
+    const col = TYPE_COL[S.shotType] || 'rgba(255,255,255,.88)';
+    const lbl = TYPE_LBL[S.shotType] || S.shotType;
+    ctx.save();
+    ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+    ctx.fillStyle = col;
+    ctx.font = `700 ${12*sc}px ${SF_FONT}`; ctx.letterSpacing = (2.5*sc)+'px';
+    ctx.fillText(lbl, iX+iW-18*sc, oy+16*sc);
+    ctx.restore();
+  }
+
+  /* ── Result badge (positioned below shot type label) ── */
+  if (S.holeResult) {
+    const rl    = RES_LBL[S.holeResult] || S.holeResult.toUpperCase();
+    const rc    = RES_COL[S.holeResult] || '#B8C2CC';
+    const alpha = RES_BGA[S.holeResult] || 0.14;
+    const rgb   = hexRgb(rc);
+    ctx.save();
+    ctx.font = `700 ${12*sc}px ${SF_FONT}`; ctx.letterSpacing = (2*sc)+'px';
+    const rw   = ctx.measureText(rl).width;
+    const bpad = 8*sc, rbH = 22*sc;
+    const by   = oy + (S.showStatus ? 38*sc : 16*sc);
+    const bx   = iX + iW - 18*sc - rw - bpad*2;
+    rrect(ctx, bx, by, rw+bpad*2, rbH, 5*sc);
+    ctx.fillStyle = `rgba(${rgb},${alpha})`; ctx.fill();
+    ctx.strokeStyle = `rgba(${rgb},0.38)`; ctx.lineWidth = 1*sc; ctx.stroke();
+    ctx.fillStyle = rc; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(rl, bx+bpad, by+rbH/2);
+    ctx.restore();
+  }
+
+  /* ── Shot pills (bottom row) ── */
+  const pipMax = Math.max(S.par, S.shotIndex);
+  const pW = 28*sc, pH = 20*sc, pG = 5*sc;
+  let sx = iX + 12*sc + 36*sc;
+  const sy = oy + tH + 1*sc + (bH - pH) / 2;
+
+  ctx.save();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,0.22)';
+  ctx.font = `600 ${8*sc}px ${SF_FONT}`; ctx.letterSpacing = (2*sc)+'px';
+  ctx.fillText('SHOT', iX+12*sc, oy+tH+bH/2);
+
+  for (let i = 1; i <= pipMax; i++) {
+    const iC = i === S.shotIndex, iP = i < S.shotIndex;
+    rrect(ctx, sx, sy, pW, pH, 3*sc);
+    if (iC)       { ctx.fillStyle = '#C9A24A'; }
+    else if (iP)  { ctx.fillStyle = 'rgba(255,255,255,0.16)'; }
+    else          { ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.strokeStyle='rgba(255,255,255,0.1)'; ctx.lineWidth=1*sc; ctx.stroke(); }
+    ctx.fill();
+    ctx.font = `700 ${10*sc}px ${SF_FONT}`; ctx.letterSpacing = '0px';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = iC ? '#000' : iP ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.12)';
+    ctx.fillText(String(i), sx+pW/2, sy+pH/2+0.5*sc);
+    sx += pW + pG;
+  }
+  ctx.restore();
+}
+
+/* ── Path helpers ── */
+function rrect(ctx, x, y, w, h, r) {
+  r = Math.min(r, Math.min(w,h)/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+}
+function rrectLeft(ctx, x, y, w, h, r) {
+  r = Math.min(r, Math.min(w,h)/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w,y); ctx.lineTo(x+w,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+}
+function rrectRight(ctx, x, y, w, h, r) {
+  r = Math.min(r, Math.min(w,h)/2);
+  ctx.beginPath();
+  ctx.moveTo(x,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x,y+h); ctx.closePath();
+}
+
+/* ── Safe zones (preview only) ── */
+function drawSafeZones(ctx, cW, cH) {
+  if (!S.safeOn) return;
+  ctx.save();
+  ctx.setLineDash([6,4]); ctx.lineWidth = 1;
+  // Action safe (5%)
+  const ax = cW*.05, ay = cH*.05;
+  ctx.strokeStyle = 'rgba(255,200,0,0.28)';
+  ctx.strokeRect(ax, ay, cW-ax*2, cH-ay*2);
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(255,200,0,0.42)'; ctx.font = `9px system-ui`; ctx.letterSpacing='1px';
+  ctx.textAlign='left'; ctx.textBaseline='top';
+  ctx.fillText('ACTION SAFE', ax+4, ay+3);
+  // Title safe (10%)
+  ctx.setLineDash([6,4]);
+  const tx = cW*.1, ty = cH*.1;
+  ctx.strokeStyle = 'rgba(255,140,0,0.2)';
+  ctx.strokeRect(tx, ty, cW-tx*2, cH-ty*2);
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(255,140,0,0.38)';
+  ctx.fillText('TITLE SAFE', tx+4, ty+3);
+  ctx.restore();
+}
+
+/* ══════════════════════════════════════════════════
+   PREVIEW STAGE MODULE
+══════════════════════════════════════════════════ */
+const canvas = el('pcanvas');
+const ctx2   = canvas.getContext('2d');
+
+function getCanvasSize() {
+  const area  = el('previewArea');
+  const wW = area.clientWidth, wH = area.clientHeight;
+  const ratio = ASP_RATIO[S.aspect] || (16/9);
+  let cW, cH;
+  if (wW/wH > ratio) { cH = wH; cW = Math.round(cH*ratio); }
+  else               { cW = wW; cH = Math.round(cW/ratio); }
+  return { cW: Math.max(cW, 100), cH: Math.max(cH, 60) };
+}
+
+// Overlay scale: base = 1920px reference, adjusted by ovScale setting
+function ovScaleFor(cW) {
+  const base = cW / 1920;
+  return Math.max(0.22, Math.min(3, base * (S.ovScale || 1.0)));
+}
+
+// Overlay position (returns top-left in canvas coords)
+function ovPosFor(cW, cH, sc, preset, insetPx, cxN, cyN) {
+  const ovW = OVW * sc, ovH = OVH * sc;
+  const i   = insetPx * (cW / 1920);
+  if (preset === 'custom' && cxN !== null) {
+    return { x: cxN*cW, y: cyN*cH, ovW, ovH };
+  }
+  switch (preset) {
+    case 'TR': return { x: cW-ovW-i, y: i,         ovW, ovH };
+    case 'TL': return { x: i,        y: i,         ovW, ovH };
+    case 'BL': return { x: i,        y: cH-ovH-i, ovW, ovH };
+    case 'BR': return { x: cW-ovW-i, y: cH-ovH-i, ovW, ovH };
+    case 'C':  return { x:(cW-ovW)/2,y:(cH-ovH)/2,ovW, ovH };
+    default:   return { x: cW-ovW-i, y: i,         ovW, ovH };
+  }
+}
+
+function render() {
+  const { cW, cH } = getCanvasSize();
+  const dpr = Math.min(window.devicePixelRatio || 1, 3); // cap at 3x
+
+  canvas.width  = cW * dpr;
+  canvas.height = cH * dpr;
+  canvas.style.width  = cW + 'px';
+  canvas.style.height = cH + 'px';
+  const cw = el('canvasWrap');
+  cw.style.width  = cW + 'px';
+  cw.style.height = cH + 'px';
+
+  const ctx = ctx2;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // Stage background
+  ctx.fillStyle = '#080c13'; ctx.fillRect(0, 0, cW, cH);
+
+  // Watermark
+  ctx.fillStyle = 'rgba(255,255,255,0.028)';
+  ctx.font = `700 ${Math.round(cH*.036)}px system-ui`; ctx.letterSpacing = '5px';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const aspLbl = S.aspect==='169'?'16:9':S.aspect==='916'?'9:16':'1:1';
+  ctx.fillText(aspLbl, cW/2, cH/2);
+
+  // Reference image
+  if (refImg && refVisible) {
+    ctx.save(); ctx.globalAlpha = refOpacity;
+    const iW = refImg.naturalWidth, iH = refImg.naturalHeight;
+    const scale = Math.max(cW/iW, cH/iH) * refScaleMod;
+    ctx.drawImage(refImg, (cW-iW*scale)/2+refOffX, (cH-iH*scale)/2+refOffY, iW*scale, iH*scale);
+    ctx.restore();
+  }
+
+  // Overlay
+  const sc = ovScaleFor(cW);
+  let { x:ox, y:oy, ovW, ovH } = ovPosFor(cW, cH, sc, S.position, S.inset, S.customX, S.customY);
+  ox = Math.max(0, Math.min(cW-ovW, ox));
+  oy = Math.max(0, Math.min(cH-ovH, oy));
+  drawOverlay(ctx, { scale:sc, ox, oy, forExport:false });
+
+  // Safe zones
+  drawSafeZones(ctx, cW, cH);
+
+  syncUI();
+}
+
+/* ══════════════════════════════════════════════════
+   EXPORT MODULE
+══════════════════════════════════════════════════ */
+function doExport() {
+  const resH  = parseInt(el('resSel').value) || 1080;
+  const ratio = ASP_RATIO[S.aspect] || (16/9);
+  const expW  = Math.round(resH * ratio);
+  const expH  = resH;
+
+  const ec    = document.createElement('canvas');
+  ec.width  = expW; ec.height = expH;
+  const ectx = ec.getContext('2d');
+
+  // Background
+  if (S.fmt === 'black') { ectx.fillStyle = '#000'; ectx.fillRect(0,0,expW,expH); }
+
+  // Optional ref image
+  if (refImg && refVisible && S.exportIncRef) {
+    const { cW } = getCanvasSize();
+    const scR = expW / cW;
+    ectx.save(); ectx.globalAlpha = refOpacity;
+    const iW = refImg.naturalWidth, iH = refImg.naturalHeight;
+    const scale = Math.max(expW/iW, expH/iH) * refScaleMod;
+    ectx.drawImage(refImg,
+      (expW-iW*scale)/2 + refOffX*scR,
+      (expH-iH*scale)/2 + refOffY*scR,
+      iW*scale, iH*scale);
+    ectx.restore();
+  }
+
+  // Overlay — same scale formula as preview
+  const sc = ovScaleFor(expW);
+  let { x:ox, y:oy, ovW, ovH } = ovPosFor(expW, expH, sc, S.position, S.inset, S.customX, S.customY);
+  ox = Math.max(0, Math.min(expW-ovW, ox));
+  oy = Math.max(0, Math.min(expH-ovH, oy));
+  drawOverlay(ectx, { scale:sc, ox, oy, forExport:true });
+
+  // Filename
+  const ts = S.shotType.toLowerCase();
+  const rs = S.holeResult ? '_'+S.holeResult : '';
+  const ys = S.showYards  ? '_'+S.yards+(S.unit==='M'?'m':'yd') : '';
+  const fn = `hole${pad(S.holeNumber)}_shot${pad(S.shotIndex)}_${ts}${ys}${rs}.png`;
+
+  const a = document.createElement('a');
+  a.download = fn; a.href = ec.toDataURL('image/png'); a.click();
+
+  const fb = el('expFb');
+  fb.textContent = '✓ '+fn; fb.classList.add('on');
+  const btn = el('btnExp'); btn.disabled = true;
+  setTimeout(() => { fb.classList.remove('on'); btn.disabled = false; }, 3000);
+}
+
+/* ══════════════════════════════════════════════════
+   UI SYNC MODULE
+══════════════════════════════════════════════════ */
+function syncUI() {
+  el('inHole').value  = S.holeNumber;
+  el('inYards').value = S.yards;
+  el('insetIn').value = S.inset;
+  el('unitTag').textContent  = S.unit;
+  el('yardsLbl').textContent = S.unit==='M' ? 'Metres' : 'Yards';
+
+  document.querySelectorAll('.par-btn').forEach(b =>
+    b.classList.toggle('on', parseInt(b.getAttribute('data-p')) === S.par));
+
+  document.querySelectorAll('.st-btn').forEach(b =>
+    b.className = 'st-btn' + (b.getAttribute('data-st')===S.shotType ? ' on-'+S.shotType : ''));
+
+  document.querySelectorAll('.res-btn').forEach(b => {
+    const r = b.getAttribute('data-r');
+    b.className = 'res-btn' + (r===S.holeResult ? ' on-'+r : '');
+  });
+
+  el('chkYards').classList.toggle('on',   S.showYards);
+  el('chkStatus').classList.toggle('on',  S.showStatus);
+  el('chkIncRef').classList.toggle('on',  S.exportIncRef);
+
+  el('autoTag').style.opacity = S.manualType ? '.3' : '1';
+  el('btnUndoShot').disabled  = !shotStack.length;
+
+  document.querySelectorAll('.pos-btn').forEach(b =>
+    b.classList.toggle('on', b.getAttribute('data-pos')===S.position));
+
+  ['169','916','11'].forEach(a => el('asp'+a).classList.toggle('on', a===S.aspect));
+
+  el('unitYds').classList.toggle('on', S.unit==='YDS');
+  el('unitM').classList.toggle('on',   S.unit==='M');
+
+  el('btnSafe').classList.toggle('on', S.safeOn);
+  el('fmtTransp').classList.toggle('on', S.fmt==='transparent');
+  el('fmtBlack').classList.toggle('on',  S.fmt==='black');
+
+  const yd = S.unit==='M' ? Math.round(S.yards*.9144)+'m' : S.yards+'yd';
+  el('sbText').textContent =
+    `Hole ${S.holeNumber} · Par ${S.par} · Shot ${S.shotIndex} · ${TYPE_LBL[S.shotType]||S.shotType} · ${yd}` +
+    (S.holeResult ? ' · '+(RES_LBL[S.holeResult]||S.holeResult) : '');
+}
+
+/* ══════════════════════════════════════════════════
+   INTERACTION: drag overlay / pan ref / pinch-zoom
+══════════════════════════════════════════════════ */
+let _ovDrag = false, _ovDX = 0, _ovDY = 0;
+let _bgDrag = false, _bgX  = 0, _bgY  = 0, _bgOX = 0, _bgOY = 0;
+let _pt1 = null, _pt2 = null, _rScStart = 1;
+
+function hitOv(mx, my) {
+  const { cW, cH } = getCanvasSize();
+  const sc = ovScaleFor(cW);
+  const { x, y, ovW, ovH } = ovPosFor(cW, cH, sc, S.position, S.inset, S.customX, S.customY);
+  const cx = Math.max(0, Math.min(cW-ovW, x));
+  const cy = Math.max(0, Math.min(cH-ovH, y));
+  return { hit: mx>=cx && mx<=cx+ovW && my>=cy && my<=cy+ovH, cx, cy, ovW, ovH, cW, cH };
+}
+
+function pxy(e) {
+  const r   = canvas.getBoundingClientRect();
+  const src = e.touches ? e.touches[0] : e;
+  return { x: src.clientX - r.left, y: src.clientY - r.top };
+}
+
+// Prevent canvas events from bubbling to previewArea (avoid spurious file picker)
+canvas.addEventListener('click', e => e.stopPropagation());
+
+canvas.addEventListener('mousedown', onPD);
+canvas.addEventListener('mousemove', onPM);
+canvas.addEventListener('mouseup',   onPU);
+canvas.addEventListener('mouseleave', onPU);
+canvas.addEventListener('touchstart', onTD, { passive:false });
+canvas.addEventListener('touchmove',  onTM, { passive:false });
+canvas.addEventListener('touchend',   onPU, { passive:false });
+
+function onTD(e) {
+  if (e.touches.length === 2) {
+    _pt1 = e.touches[0]; _pt2 = e.touches[1]; _rScStart = refScaleMod;
+    e.preventDefault(); return;
+  }
+  onPD(e);
+}
+function onTM(e) {
+  if (e.touches.length === 2 && _pt1) {
+    const d0 = Math.hypot(_pt2.clientX-_pt1.clientX, _pt2.clientY-_pt1.clientY);
+    const d1 = Math.hypot(e.touches[1].clientX-e.touches[0].clientX, e.touches[1].clientY-e.touches[0].clientY);
+    refScaleMod = Math.max(0.3, Math.min(4, _rScStart*(d1/d0)));
+    render(); e.preventDefault(); return;
+  }
+  onPM(e);
+}
+
+function onPD(e) {
+  const { x, y } = pxy(e);
+  const { hit, cx, cy, ovW, ovH, cW, cH } = hitOv(x, y);
+  if (hit) {
+    _ovDrag=true; _ovDX=x-cx; _ovDY=y-cy;
+    canvas.classList.add('ov-drag');
+    e.preventDefault && e.preventDefault();
+    e.stopPropagation && e.stopPropagation();
+  } else if (refImg && refVisible) {
+    _bgDrag=true; _bgX=x; _bgY=y; _bgOX=refOffX; _bgOY=refOffY;
+    canvas.classList.add('bg-drag');
+    e.preventDefault && e.preventDefault();
+    e.stopPropagation && e.stopPropagation();
+  } else {
+    // Tap on empty canvas area → open file picker for ref image
+    e.stopPropagation && e.stopPropagation();
+    el('refIn').click();
+  }
+}
+function onPM(e) {
+  if (!_ovDrag && !_bgDrag) {
+    const { x, y } = pxy(e);
+    const { hit } = hitOv(x, y);
+    canvas.classList.toggle('ov-hover', hit);
+    return;
+  }
+  const { x, y } = pxy(e);
+  if (_ovDrag) {
+    const { cW, cH, ovW, ovH } = hitOv(0,0);
+    S.position = 'custom';
+    S.customX  = Math.max(0, Math.min(1-ovW/cW, (x-_ovDX)/cW));
+    S.customY  = Math.max(0, Math.min(1-ovH/cH, (y-_ovDY)/cH));
+    document.querySelectorAll('.pos-btn').forEach(b => b.classList.remove('on'));
+    render(); e.preventDefault && e.preventDefault();
+  } else if (_bgDrag) {
+    refOffX = _bgOX+(x-_bgX); refOffY = _bgOY+(y-_bgY);
+    render(); e.preventDefault && e.preventDefault();
+  }
+}
+function onPU() {
+  if (_ovDrag) { _ovDrag=false; queueSave(); }
+  _bgDrag=false; _pt1=null;
+  canvas.classList.remove('ov-drag','bg-drag','ov-hover');
+}
+
+/* ══════════════════════════════════════════════════
+   KEYBOARD SHORTCUTS
+══════════════════════════════════════════════════ */
+document.addEventListener('keydown', e => {
+  if (e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+  const k = e.key.toLowerCase();
+  if ((k==='z'&&(e.metaKey||e.ctrlKey))||k==='u') { e.preventDefault(); undoShot(); }
+  else if (k==='n'||k==='arrowright') nextShot();
+  else if (k==='h') newHole();
+  else if (k==='b') setRes('birdie');
+  else if (k==='p') setRes('par');
+  else if (k==='g') setRes('bogey');
+  else if (k==='enter') doExport();
+});
+
+/* ══════════════════════════════════════════════════
+   INIT
+══════════════════════════════════════════════════ */
+loadState();
+// Restore ovScale UI
+(function() {
+  const sc = S.ovScale||1.0;
+  const id = sc<=0.8?'scSm':sc>=1.15?'scLg':'scMd';
+  ['scSm','scMd','scLg'].forEach(i => el(i).classList.toggle('on', i===id));
+})();
+render();
+window.addEventListener('resize', () => render());
+</script>
+</body>
+</html>
