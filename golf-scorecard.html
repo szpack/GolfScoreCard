@@ -1,0 +1,1855 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>高尔夫赛事角标助手 · Golf Overlay</title>
+<style>
+/* ═══════════════════════════════════════════════
+   CSS VARIABLES — App UI + Overlay Theme
+═══════════════════════════════════════════════ */
+:root {
+  /* App shell (dark) */
+  --bg:       #050a10;
+  --panel:    #0a1220;
+  --card:     #0e1828;
+  --border:   rgba(255,255,255,0.08);
+  --b2:       rgba(255,255,255,0.14);
+  --txt:      rgba(255,255,255,0.90);
+  --t2:       rgba(255,255,255,0.55);
+  --t3:       rgba(255,255,255,0.30);
+  --app-green: #1a5c3c;
+  --app-green2:#236b47;
+  --app-gold:  #C9A84C;
+  --app-red:   #C0534A;
+  --f: ui-sans-serif,system-ui,-apple-system,"SF Pro Display","Segoe UI",Helvetica,Arial,sans-serif;
+  --r: 7px;
+
+  /* ── Overlay / Canvas Theme (Masters broadcast) ── */
+  /* These are referenced in JS TH{} object too */
+  --ov-green:       #1B5E3B;   /* Masters green — left column bg */
+  --ov-green-dark:  #164d30;   /* slightly darker for depth */
+  --ov-gold:        #B8962E;   /* gold accent — PAR label */
+  --ov-white:       #FFFFFF;
+  --ov-bg:          #F8F8F8;   /* right panel bg */
+  --ov-bg2:         #EFEFEF;   /* shot progress bg */
+  --ov-txt:         #111111;   /* primary text */
+  --ov-txt2:        #555555;   /* secondary text */
+  --ov-txt3:        #888888;   /* tertiary text */
+  --ov-border:      #D8D8D8;   /* dividers */
+  --ov-score-red:   #C0392B;   /* under par score */
+  --ov-score-blk:   #111111;   /* over par / even */
+  --ov-finished-bg: #1B5E3B;   /* result badge bg */
+  --ov-finished-fg: #FFFFFF;   /* result badge text */
+  --ov-pip-curr:    #1B5E3B;   /* current shot highlight */
+  --ov-pip-done:    #AAAAAA;
+  --ov-pip-todo:    #DDDDDD;
+}
+
+/* ═══════════════════════════════════════════════
+   RESET + BASE
+═══════════════════════════════════════════════ */
+*,*::before,*::after { margin:0; padding:0; box-sizing:border-box; }
+html { height:100%; -webkit-text-size-adjust:100%; }
+body {
+  background:var(--bg); color:var(--txt);
+  font-family:var(--f); font-size:14px;
+  height:100%; display:flex; flex-direction:column;
+  overflow:hidden; -webkit-font-smoothing:antialiased;
+}
+button {
+  font-family:var(--f); cursor:pointer; border:none; outline:none;
+  -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+}
+button:active { opacity:.78; transform:scale(.96); }
+input,select {
+  font-family:var(--f); outline:none;
+  -webkit-tap-highlight-color:transparent; color:var(--txt);
+}
+input[type=number]{ -moz-appearance:textfield; }
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; }
+
+/* ═══════════════════════════════════════════════
+   APP SHELL
+═══════════════════════════════════════════════ */
+.app { display:flex; flex-direction:column; height:100%; max-height:100dvh; }
+
+/* ── Header bar ── */
+.hdr {
+  background:var(--panel); border-bottom:2px solid var(--app-green);
+  padding:0 14px; display:flex; align-items:center; justify-content:space-between;
+  flex-shrink:0; min-height:44px; gap:8px; flex-wrap:wrap;
+}
+.hdr-brand { display:flex; flex-direction:column; gap:0; padding:5px 0; }
+.hdr-title { font-size:13px; font-weight:700; letter-spacing:1.5px; color:#fff; white-space:nowrap; }
+.hdr-sub   { font-size:9px; color:var(--t3); letter-spacing:1px; }
+.hdr-right { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
+
+.chip {
+  height:28px; padding:0 11px; border-radius:5px;
+  border:1px solid var(--border); background:rgba(255,255,255,.04); color:var(--t3);
+  font-size:10px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; white-space:nowrap;
+  transition:background .12s,color .12s;
+}
+.chip:hover  { background:rgba(255,255,255,.09); color:var(--txt); }
+.chip.on     { background:rgba(201,168,76,.18); border-color:var(--app-gold); color:var(--app-gold); }
+.chip.danger { border-color:rgba(192,83,74,.35); color:rgba(192,83,74,.8); }
+.chip.danger:hover { background:rgba(192,83,74,.12); color:var(--app-red); }
+.btn-new-round { border-color:rgba(201,168,76,.4); color:var(--app-gold); }
+.btn-new-round:hover { background:rgba(201,168,76,.15); color:var(--app-gold); }
+.chip:active { transform:scale(.95); opacity:1; }
+.bar-sep { width:1px; height:16px; background:var(--border); flex-shrink:0; }
+
+/* ── Preview area ── */
+.preview-area {
+  flex:1; display:flex; align-items:center; justify-content:center;
+  background:#03060d; position:relative; overflow:hidden; min-height:0;
+}
+.canvas-wrap { position:relative; flex-shrink:0; }
+#pcanvas     { display:block; }
+#pcanvas.ov-hover { cursor:grab; }
+#pcanvas.ov-drag  { cursor:grabbing; }
+#pcanvas.bg-drag  { cursor:move; }
+.tap-hint {
+  position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+  background:rgba(0,0,0,.5); border:1px dashed rgba(255,255,255,.2);
+  border-radius:7px; padding:5px 14px;
+  font-size:10px; letter-spacing:1.5px; text-transform:uppercase;
+  color:rgba(255,255,255,.3); pointer-events:none; white-space:nowrap;
+}
+.canvas-wrap.has-ref .tap-hint { display:none; }
+
+/* ═══════════════════════════════════════════════
+   SCORECARD NAV STRIP (below preview, primary nav)
+═══════════════════════════════════════════════ */
+.sc-nav {
+  flex-shrink:0; background:var(--panel);
+  border-top:1px solid var(--border);
+  padding:7px 12px;
+  display:flex; align-items:stretch; gap:8px;
+  overflow:hidden;
+}
+.sc-holes-scroll {
+  flex:1; overflow-x:auto; scrollbar-width:none;
+}
+.sc-holes-scroll::-webkit-scrollbar { display:none; }
+.sc-holes {
+  display:flex; gap:4px; align-items:stretch; min-width:max-content;
+}
+
+/* Each hole card */
+.sc-hole-card {
+  display:flex; flex-direction:column; align-items:center; justify-content:space-between;
+  min-width:46px; height:62px; padding:5px 4px 5px;
+  background:var(--card); border:1px solid var(--border); border-radius:6px;
+  cursor:pointer; flex-shrink:0; transition:all .12s;
+  -webkit-tap-highlight-color:transparent; gap:0;
+}
+.sc-hole-card:hover { background:rgba(255,255,255,.07); border-color:var(--b2); }
+.sc-hole-card.active {
+  background:rgba(26,92,60,.22); border-color:var(--app-green);
+  box-shadow:0 0 0 1px var(--app-green) inset;
+}
+.sc-h-num  { font-size:8px; font-weight:700; color:var(--t2); letter-spacing:.3px; }
+.sc-h-par  { font-size:7px; color:var(--t3); letter-spacing:.3px; }
+.sc-h-strokes {
+  font-size:16px; font-weight:800; color:var(--t2);
+  font-variant-numeric:tabular-nums; line-height:1;
+}
+/* Finished result colors */
+.sc-hole-card.res-birdie { background:rgba(26,120,68,.25); border-color:#2a8c50; }
+.sc-hole-card.res-birdie .sc-h-strokes { color:#3dc97a; }
+.sc-hole-card.res-eagle  { background:rgba(30,100,200,.22); border-color:#3a70cc; }
+.sc-hole-card.res-eagle  .sc-h-strokes { color:#5a9eff; }
+.sc-hole-card.res-ace    { background:rgba(180,140,20,.25); border-color:#c9a84c; }
+.sc-hole-card.res-ace    .sc-h-strokes { color:#e8c55a; }
+.sc-hole-card.res-par    { background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.2); }
+.sc-hole-card.res-par    .sc-h-strokes { color:rgba(255,255,255,.6); }
+.sc-hole-card.res-bogey  { background:rgba(200,100,40,.2); border-color:#c87030; }
+.sc-hole-card.res-bogey  .sc-h-strokes { color:#e89050; }
+.sc-hole-card.res-double,.sc-hole-card.res-worse {
+  background:rgba(180,50,50,.22); border-color:#c04040;
+}
+.sc-hole-card.res-double .sc-h-strokes,
+.sc-hole-card.res-worse  .sc-h-strokes { color:#d06060; }
+
+/* Totals panel right of scorecard */
+.sc-totals {
+  display:flex; flex-direction:column; justify-content:center; gap:2px;
+  padding:0 10px; border-left:1px solid var(--border);
+  flex-shrink:0; min-width:80px;
+}
+.sc-tot-row { display:flex; flex-direction:column; align-items:center; }
+.sc-tot-lbl { font-size:7px; letter-spacing:1.5px; text-transform:uppercase; color:var(--t3); }
+.sc-tot-val {
+  font-size:14px; font-weight:800; color:var(--txt);
+  font-variant-numeric:tabular-nums;
+}
+.sc-tot-val.under { color:#3dc97a; }
+.sc-tot-val.over  { color:#e89050; }
+
+/* ═══════════════════════════════════════════════
+   SETTINGS DRAWER
+═══════════════════════════════════════════════ */
+.drawer {
+  position:fixed; inset:0; z-index:200;
+  pointer-events:none; visibility:hidden;
+  transition:visibility 0s .26s;
+}
+.drawer.open { pointer-events:all; visibility:visible; transition:none; }
+.dscrim {
+  position:absolute; inset:0; background:rgba(0,0,0,.6);
+  opacity:0; transition:opacity .26s;
+}
+.drawer.open .dscrim { opacity:1; }
+.dpanel {
+  position:absolute; right:0; top:0; bottom:0; width:min(340px,94vw);
+  background:var(--panel); border-left:1px solid var(--border);
+  display:flex; flex-direction:column;
+  transform:translateX(100%);
+  transition:transform .26s cubic-bezier(.4,0,.2,1);
+  overflow:hidden;
+}
+.drawer.open .dpanel { transform:none; }
+.dhdr {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:13px 16px 12px; border-bottom:1px solid var(--border); flex-shrink:0;
+}
+.dtitle { font-size:11px; font-weight:700; letter-spacing:2.5px; text-transform:uppercase; color:var(--app-gold); }
+.dclose {
+  width:30px; height:30px; border-radius:5px;
+  background:rgba(255,255,255,.06); color:var(--t2); font-size:14px;
+  display:flex; align-items:center; justify-content:center; border:1px solid var(--border);
+}
+.dbody {
+  flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:14px 16px 24px; display:flex; flex-direction:column; gap:16px;
+}
+.ds { display:flex; flex-direction:column; gap:8px; }
+.dslbl { font-size:8.5px; letter-spacing:2.5px; text-transform:uppercase; color:var(--t3); font-weight:600; }
+.dsrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.dsdiv { height:1px; background:var(--border); margin:2px 0; }
+
+/* Checkbox */
+.chk {
+  display:flex; align-items:center; gap:7px; cursor:pointer;
+  padding:3px 5px; border-radius:4px; transition:background .12s;
+  -webkit-tap-highlight-color:transparent; min-height:28px;
+}
+.chk:hover { background:rgba(255,255,255,.05); }
+.chk-b {
+  width:17px; height:17px; min-width:17px;
+  border:1.5px solid rgba(255,255,255,.22); border-radius:3px;
+  background:rgba(255,255,255,.04);
+  display:flex; align-items:center; justify-content:center;
+  transition:all .12s; pointer-events:none;
+}
+.chk-b svg { display:none; width:9px; height:9px; }
+.chk.on .chk-b { background:var(--app-gold); border-color:var(--app-gold); }
+.chk.on .chk-b svg { display:block; }
+.chk.on .chk-lbl { color:rgba(255,255,255,.82); }
+.chk-lbl { font-size:10px; letter-spacing:1.2px; text-transform:uppercase; color:var(--t3); transition:color .12s; white-space:nowrap; }
+
+.pos-row { display:flex; gap:4px; flex-wrap:wrap; }
+.pos-btn {
+  height:28px; padding:0 10px; background:var(--card);
+  border:1px solid var(--border); border-radius:5px; color:var(--t3);
+  font-size:10px; font-weight:700; letter-spacing:.4px; transition:all .12s;
+}
+.pos-btn:hover { background:rgba(255,255,255,.1); color:var(--txt); }
+.pos-btn.on { background:rgba(201,168,76,.14); border-color:var(--app-gold); color:var(--app-gold); }
+.pos-btn:active { transform:scale(.95); opacity:1; }
+
+/* ═══════════════════════════════════════════════
+   CONTROL PANEL
+═══════════════════════════════════════════════ */
+.ctrl {
+  flex-shrink:0; background:var(--panel);
+  border-top:1px solid var(--border);
+  overflow-y:auto; -webkit-overflow-scrolling:touch;
+  max-height:46svh;
+}
+.csec {
+  padding:9px 13px 10px; border-bottom:1px solid var(--border);
+  display:flex; flex-direction:column; gap:7px;
+}
+.csec:last-child { border-bottom:none; }
+.clbl { font-size:7.5px; letter-spacing:3px; text-transform:uppercase; color:var(--t3); font-weight:600; }
+
+/* Player input */
+.player-in {
+  flex:1; height:36px; padding:0 10px; max-width:220px;
+  background:var(--card); border:1px solid var(--border);
+  border-radius:var(--r); font-size:14px; font-weight:600; color:var(--txt); min-width:0;
+}
+.player-in:focus { border-color:var(--app-gold); }
+.player-in::placeholder { color:var(--t3); }
+
+/* Par selector (compact segments) */
+.par-seg {
+  display:flex; border-radius:6px; overflow:hidden;
+  border:1px solid var(--border); background:var(--card);
+}
+.par-btn {
+  flex:1; height:36px; background:transparent;
+  border:none; color:rgba(255,255,255,.48);
+  font-size:15px; font-weight:700;
+  border-right:1px solid var(--border);
+  transition:background .12s, color .12s;
+}
+.par-btn:last-child { border-right:none; }
+.par-btn:hover { background:rgba(255,255,255,.08); color:var(--txt); }
+.par-btn:active { transform:none; opacity:1; }
+.par-btn.on { background:var(--app-green); color:#fff; }
+
+/* Yards spinner */
+.spin { display:flex; align-items:center; gap:4px; }
+.sp-btn {
+  width:38px; height:38px; background:var(--card);
+  border:1px solid var(--border); border-radius:var(--r);
+  color:var(--txt); font-size:20px; font-weight:300;
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+}
+.sp-btn:hover { background:rgba(255,255,255,.1); }
+.sp-btn:active { transform:scale(.93); opacity:1; }
+.sp-val {
+  width:60px; height:38px; background:var(--card);
+  border:1px solid var(--border); border-radius:var(--r);
+  text-align:center; font-size:20px; font-weight:800;
+}
+.sp-val:focus { border-color:var(--app-gold); }
+.sp-unit { font-size:10px; color:var(--t3); letter-spacing:1px; white-space:nowrap; }
+
+/* Shot type */
+.st-row { display:flex; gap:4px; flex-wrap:wrap; }
+.st-btn {
+  flex:1; min-width:60px; height:38px;
+  background:var(--card); border:1px solid var(--border);
+  border-radius:var(--r); color:rgba(255,255,255,.45);
+  font-size:10px; font-weight:700; letter-spacing:.7px; text-transform:uppercase;
+  transition:all .12s;
+}
+.st-btn:hover { background:rgba(255,255,255,.09); color:var(--txt); }
+.st-btn:active { transform:scale(.95); opacity:1; }
+.st-btn.on-TEE      { background:rgba(255,255,255,.13); border-color:rgba(255,255,255,.4); color:#fff; }
+.st-btn.on-APPROACH { background:rgba(74,158,255,.14); border-color:#4A9EFF; color:#4A9EFF; }
+.st-btn.on-CHIP     { background:rgba(240,168,48,.14);  border-color:#F0A830; color:#F0A830; }
+.st-btn.on-PUTT     { background:rgba(184,164,240,.14); border-color:#B8A4F0; color:#B8A4F0; }
+.auto-tag {
+  font-size:8px; padding:1px 6px; border-radius:5px;
+  background:rgba(201,168,76,.13); border:1px solid rgba(201,168,76,.28);
+  color:var(--app-gold); letter-spacing:.8px; font-weight:700;
+}
+
+/* Hole status display (read-only) */
+.hole-status {
+  display:flex; align-items:center; gap:10px;
+  padding:6px 10px; background:var(--card);
+  border:1px solid var(--border); border-radius:var(--r);
+  flex-wrap:wrap;
+}
+.hs-shots { font-size:20px; font-weight:800; color:var(--txt); min-width:28px; }
+.hs-label { font-size:8px; letter-spacing:2px; text-transform:uppercase; color:var(--t3); }
+.hs-result { font-size:12px; font-weight:700; letter-spacing:1.5px; }
+.hs-result.birdie,.hs-result.eagle,.hs-result.ace { color:#3dc97a; }
+.hs-result.par   { color:var(--t2); }
+.hs-result.bogey { color:#e89050; }
+.hs-result.double,.hs-result.worse { color:#d06060; }
+.hs-for  { font-size:10px; color:#B8A4F0; font-weight:700; letter-spacing:1px; margin-left:auto; }
+
+/* Result buttons (used to MARK hole finished) */
+.res-row { display:flex; gap:4px; flex-wrap:wrap; }
+.res-btn {
+  flex:1; min-width:44px; height:32px; padding:0 4px;
+  background:var(--card); border:1px solid var(--border);
+  border-radius:var(--r); color:rgba(255,255,255,.38);
+  font-size:9.5px; font-weight:700; letter-spacing:.5px; text-transform:uppercase;
+  transition:all .12s;
+}
+.res-btn:hover { background:rgba(255,255,255,.09); color:var(--txt); }
+.res-btn:active { transform:scale(.95); opacity:1; }
+.res-btn.on-ace,.res-btn.on-eagle { background:rgba(201,168,76,.14); border-color:var(--app-gold); color:var(--app-gold); }
+.res-btn.on-birdie { background:rgba(26,120,68,.22); border-color:#2a8c50; color:#3dc97a; }
+.res-btn.on-par    { background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.25); color:rgba(255,255,255,.7); }
+.res-btn.on-bogey  { background:rgba(200,100,40,.18); border-color:#c87030; color:#e89050; }
+.res-btn.on-double,.res-btn.on-worse { background:rgba(180,50,50,.18); border-color:#c04040; color:#d06060; }
+
+/* Action buttons */
+.act-row { display:flex; gap:5px; align-items:stretch; flex-wrap:wrap; }
+.btn-next {
+  flex:3; min-width:110px; height:50px;
+  background:var(--app-green); border-radius:var(--r); color:#fff;
+  font-size:14px; font-weight:800; letter-spacing:2px; text-transform:uppercase;
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  transition:background .12s;
+}
+.btn-next:hover { background:var(--app-green2); }
+.btn-next:active { opacity:.85; transform:scale(.97); }
+
+.btn-undo {
+  flex:1; min-width:50px; height:50px;
+  background:var(--card); border:1px solid var(--border);
+  border-radius:var(--r); color:var(--t2);
+  font-size:12px; font-weight:700; letter-spacing:.5px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
+  transition:all .12s;
+}
+.btn-undo:hover { background:rgba(255,255,255,.09); color:var(--txt); }
+.btn-undo:disabled { opacity:.2; cursor:default; }
+.btn-undo:disabled:active { transform:none; opacity:.2; }
+
+.btn-newhole {
+  flex:1; min-width:70px; height:50px;
+  background:rgba(201,168,76,.1); border:1px solid rgba(201,168,76,.25);
+  border-radius:var(--r); color:var(--app-gold);
+  font-size:9.5px; font-weight:800; letter-spacing:1px; text-transform:uppercase;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
+  transition:background .12s;
+}
+.btn-newhole:hover { background:rgba(201,168,76,.2); }
+.btn-newhole:active { opacity:.85; transform:scale(.97); }
+
+.btn-prev {
+  flex:0 0 50px; height:50px;
+  background:var(--card); border:1px solid var(--border);
+  border-radius:var(--r); color:var(--t3);
+  font-size:10px; font-weight:700; letter-spacing:.3px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
+  transition:all .12s;
+}
+.btn-prev:hover { background:rgba(255,255,255,.08); color:var(--t2); }
+.btn-prev:active { transform:scale(.95); opacity:1; }
+
+/* Export row */
+.exp-row { display:flex; gap:5px; align-items:center; flex-wrap:wrap; }
+.btn-export {
+  height:40px; padding:0 16px;
+  background:linear-gradient(135deg,#C9A84C,#E0BF60,#C9A84C);
+  border-radius:var(--r); color:#1a1000;
+  font-size:12px; font-weight:800; letter-spacing:2px; text-transform:uppercase;
+  display:flex; align-items:center; gap:6px;
+  box-shadow:0 2px 10px rgba(201,168,76,.2); white-space:nowrap;
+  transition:box-shadow .15s;
+}
+.btn-export:hover { box-shadow:0 4px 18px rgba(201,168,76,.35); }
+.btn-export:active { transform:scale(.97); opacity:.9; }
+.btn-export:disabled { opacity:.4; cursor:default; }
+.btn-export:disabled:active { transform:none; }
+.fmt-btn {
+  height:30px; padding:0 10px; background:var(--card);
+  border:1px solid var(--border); border-radius:5px;
+  color:var(--t3); font-size:10px; font-weight:600; letter-spacing:.6px;
+  transition:all .12s;
+}
+.fmt-btn:hover { background:rgba(255,255,255,.1); color:var(--txt); }
+.fmt-btn.on { background:rgba(201,168,76,.14); border-color:var(--app-gold); color:var(--app-gold); }
+.res-sel {
+  height:30px; padding:0 8px; background:var(--card);
+  border:1px solid var(--border); border-radius:5px;
+  font-size:11px; cursor:pointer;
+}
+.exp-fb { font-size:10px; letter-spacing:1.5px; color:var(--t3); opacity:0; transition:opacity .3s; white-space:nowrap; }
+.exp-fb.on { opacity:1; }
+
+/* Status bar */
+.sbar {
+  display:flex; align-items:center; gap:8px; padding:4px 13px;
+  background:var(--panel); border-top:1px solid var(--border);
+  font-size:10px; letter-spacing:1px; color:var(--t3); flex-shrink:0;
+}
+.live { width:5px; height:5px; border-radius:50%; background:#22c55e; box-shadow:0 0 4px #22c55e; animation:lp 1.8s ease-in-out infinite; flex-shrink:0; }
+@keyframes lp { 0%,100%{opacity:1}50%{opacity:.22} }
+
+/* Par grid in settings */
+.par-grid {
+  display:grid; grid-template-columns:repeat(6,1fr); gap:4px;
+}
+.par-grid-cell {
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+}
+.par-grid-lbl { font-size:8px; color:var(--t3); }
+.par-grid-sel {
+  width:100%; height:28px;
+  background:var(--card); border:1px solid var(--border); border-radius:4px;
+  font-size:11px; font-weight:700; text-align:center; color:var(--t2);
+  cursor:pointer;
+}
+.par-grid-sel:focus { border-color:var(--app-gold); }
+
+@media(max-width:480px){
+  .hdr { padding:0 10px; }
+  .csec { padding:7px 10px 9px; }
+  .sc-nav { padding:6px 10px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ═══════════════ HEADER ═══════════════ -->
+<header class="hdr">
+  <div class="hdr-brand">
+    <div class="hdr-title">高尔夫赛事角标助手</div>
+    <div class="hdr-sub">Golf Overlay · <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="2e5d545e4f4d456e5f5f004d4143">[email&#160;protected]</a></div>
+  </div>
+  <div class="hdr-right">
+    <div style="display:flex;gap:3px">
+      <button class="chip on" id="asp169" onclick="setAsp('169')">16:9</button>
+      <button class="chip"    id="asp916" onclick="setAsp('916')">9:16</button>
+      <button class="chip"    id="asp11"  onclick="setAsp('11')">1:1</button>
+    </div>
+    <div class="bar-sep"></div>
+    <button class="chip" id="btnSafe" onclick="toggleSafe()">Safe Zone</button>
+    <div class="bar-sep"></div>
+    <button class="chip btn-new-round" onclick="quickNewRound()" title="清空所有数据，开始新一轮">⊕ NEW</button>
+    <button class="chip" onclick="openDrawer()">⚙ 设置</button>
+  </div>
+</header>
+
+<!-- ═══════════════ PREVIEW ═══════════════ -->
+<div class="preview-area" id="previewArea">
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="pcanvas"></canvas>
+    <div class="tap-hint">点击空白处添加参考背景图</div>
+  </div>
+</div>
+<input type="file" id="refIn" accept="image/*" style="display:none" onchange="loadRef(this)">
+
+<!-- ═══════════════ SCORECARD NAV ═══════════════ -->
+<div class="sc-nav" id="scNav">
+  <div class="sc-holes-scroll">
+    <div class="sc-holes" id="scHoles"></div>
+  </div>
+  <!-- Totals + show-in-overlay toggle -->
+  <div class="sc-totals" id="scTotals">
+    <div class="sc-tot-row">
+      <div class="sc-tot-lbl">GROSS</div>
+      <div class="sc-tot-val" id="totGross">—</div>
+    </div>
+    <div class="sc-tot-row">
+      <div class="sc-tot-lbl">TO PAR</div>
+      <div class="sc-tot-val" id="totPar">—</div>
+    </div>
+    <!-- Checkbox: show score in overlay -->
+    <div class="chk" id="chkTotal" onclick="tog('showTotal')" style="padding:2px 0;margin-top:2px">
+      <span class="chk-b" style="width:14px;height:14px;min-width:14px"><svg viewBox="0 0 9 7" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,3.5 3.5,6 8,1"/></svg></span>
+      <span class="chk-lbl" style="font-size:8px;letter-spacing:.8px">OVERLAY</span>
+    </div>
+    <!-- Gross/Par mode toggle (shown when overlay on) -->
+    <div id="totalModeRow" style="display:none;flex-direction:column;gap:3px;margin-top:2px">
+      <button class="chip on" id="tmGross" onclick="setTotalMode('gross')" style="height:22px;font-size:8px;padding:0 6px">GROSS</button>
+      <button class="chip"    id="tmPar"   onclick="setTotalMode('par')"   style="height:22px;font-size:8px;padding:0 6px">TO PAR</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SETTINGS DRAWER ═══════════════ -->
+<div class="drawer" id="drawer">
+  <div class="dscrim" onclick="closeDrawer()"></div>
+  <div class="dpanel">
+    <div class="dhdr">
+      <span class="dtitle">⚙ 设置 Settings</span>
+      <button class="dclose" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="dbody">
+
+      <div class="ds">
+        <div class="dslbl">Overlay 位置</div>
+        <div class="pos-row">
+          <button class="pos-btn on" data-pos="TR" onclick="setPos('TR')">↗ 右上</button>
+          <button class="pos-btn"    data-pos="TL" onclick="setPos('TL')">↖ 左上</button>
+          <button class="pos-btn"    data-pos="BL" onclick="setPos('BL')">↙ 左下</button>
+          <button class="pos-btn"    data-pos="BR" onclick="setPos('BR')">↘ 右下</button>
+          <button class="pos-btn"    data-pos="C"  onclick="setPos('C')">⊙ 居中</button>
+        </div>
+        <div class="dsrow">
+          <span style="font-size:10px;color:var(--t3)">Inset (px/1080p)</span>
+          <input style="width:54px;height:28px;background:var(--card);border:1px solid var(--border);border-radius:5px;text-align:center;font-size:13px;font-weight:700"
+            type="number" id="insetIn" min="0" max="240" value="48" oninput="setInset(this.value)">
+        </div>
+        <div style="font-size:9px;color:var(--t3)">可在预览区拖拽 Overlay 微调位置</div>
+      </div>
+      <div class="dsdiv"></div>
+
+      <div class="ds">
+        <div class="dslbl">角标大小</div>
+        <div class="dsrow">
+          <button class="chip" id="scSm" onclick="setOvSc(.78,'scSm')">小 S</button>
+          <button class="chip on" id="scMd" onclick="setOvSc(1.0,'scMd')">中 M</button>
+          <button class="chip" id="scLg" onclick="setOvSc(1.25,'scLg')">大 L</button>
+        </div>
+      </div>
+      <div class="dsdiv"></div>
+
+      <div class="ds">
+        <div class="dslbl">参考背景图（仅预览用）</div>
+        <div class="dsrow">
+          <button class="chip" onclick="document.getElementById('refIn').click()">📷 选择图片</button>
+          <button class="chip danger" id="btnClrRef" style="display:none" onclick="clearRef()">✕ 清除</button>
+        </div>
+        <div id="refSettings" style="display:none;flex-direction:column;gap:10px">
+          <div class="dsrow">
+            <span style="font-size:10px;color:var(--t3);min-width:44px">透明度</span>
+            <input type="range" style="flex:1;accent-color:var(--app-gold)"
+              id="refOpSlider" min="0" max="100" value="50" oninput="setRefOp(this.value)">
+            <span style="font-size:10px;color:var(--t3);min-width:30px" id="refOpVal">50%</span>
+          </div>
+          <div class="dsrow">
+            <button class="chip" id="btnRefVis" onclick="toggleRefVis()">Hide</button>
+            <button class="chip" onclick="resetRef()">Reset</button>
+          </div>
+        </div>
+      </div>
+      <div class="dsdiv"></div>
+
+      <div class="ds">
+        <div class="dslbl">显示选项</div>
+        <div class="chk on" id="chkPlayer" onclick="tog('showPlayer')">
+          <span class="chk-b"><svg viewBox="0 0 9 7" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,3.5 3.5,6 8,1"/></svg></span>
+          <span class="chk-lbl">球员姓名 Player Name</span>
+        </div>
+      </div>
+      <div class="dsdiv"></div>
+
+      <div class="ds">
+        <div class="dslbl">距离单位</div>
+        <div class="dsrow">
+          <button class="chip on" id="unitYds" onclick="setUnit('YDS')">码 YDS</button>
+          <button class="chip"    id="unitM"   onclick="setUnit('M')">米 M</button>
+        </div>
+      </div>
+      <div class="dsdiv"></div>
+
+      <div class="ds">
+        <div class="dslbl">18洞标准杆配置</div>
+        <div class="par-grid" id="parGrid"></div>
+      </div>
+      <div class="dsdiv"></div>
+
+      <div class="ds">
+        <div class="dslbl">本轮管理</div>
+        <button class="chip danger" onclick="confirmReset()">🗑 清空本轮</button>
+      </div>
+      <div class="dsdiv"></div>
+
+      <div class="ds">
+        <div class="dslbl">键盘快捷键</div>
+        <div style="font-size:10px;color:var(--t3);line-height:2">
+          N / → &nbsp;下一杆 &nbsp; U / Ctrl+Z &nbsp;撤销<br>
+          H &nbsp;新洞 &nbsp; [ &nbsp;上一洞 &nbsp; Enter &nbsp;导出
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ CONTROLS ═══════════════ -->
+<div class="ctrl">
+
+  <!-- Row 1: Player + Par -->
+  <div class="csec">
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div class="clbl">球员姓名 Player</div>
+        <input class="player-in" id="inPlayer" type="text" placeholder="e.g. DeCHAMBEAU"
+          oninput="onPlayerInput(this.value)">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div class="clbl">标准杆 Par</div>
+        <div class="par-seg" style="width:108px">
+          <button class="par-btn" data-p="3" onclick="setCurPar(3)">3</button>
+          <button class="par-btn on" data-p="4" onclick="setCurPar(4)">4</button>
+          <button class="par-btn" data-p="5" onclick="setCurPar(5)">5</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 2: To Pin + Shot type (one row) -->
+  <div class="csec">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <!-- To Pin toggle + input -->
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+        <div class="chk on" id="chkYards" onclick="tog('showYards')" style="padding:0">
+          <span class="chk-b"><svg viewBox="0 0 9 7" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,3.5 3.5,6 8,1"/></svg></span>
+          <span class="chk-lbl" id="yardsLbl">To Pin</span>
+        </div>
+        <div class="spin" id="yardsSpinRow">
+          <button class="sp-btn" style="width:32px;height:32px;font-size:18px" onpointerdown="startAdj(-5)" onpointerup="stopAdj()" onpointerleave="stopAdj()">−</button>
+          <input class="sp-val" id="inYards" type="number" min="0" max="700" value="385"
+            oninput="inpYards(this.value)" style="width:56px;height:32px;font-size:17px">
+          <button class="sp-btn" style="width:32px;height:32px;font-size:18px" onpointerdown="startAdj(5)" onpointerup="stopAdj()" onpointerleave="stopAdj()">+</button>
+          <span class="sp-unit" id="unitTag">YDS</span>
+        </div>
+      </div>
+      <!-- Shot type (same row) -->
+      <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:200px">
+        <span class="auto-tag" id="autoTag">AUTO</span>
+        <div class="st-row" style="flex:1">
+          <button class="st-btn" data-st="TEE"      onclick="setST('TEE')">Tee</button>
+          <button class="st-btn" data-st="APPROACH" onclick="setST('APPROACH')">Appr</button>
+          <button class="st-btn" data-st="CHIP"     onclick="setST('CHIP')">Chip</button>
+          <button class="st-btn" data-st="PUTT"     onclick="setST('PUTT')">Putt</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 3: Hole status (read-only derived) -->
+  <div class="csec">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
+      <div class="clbl">本洞状态 Hole Status</div>
+      <div style="font-size:9px;color:var(--t3)" id="finishedTag">未完成</div>
+    </div>
+    <div class="hole-status">
+      <div>
+        <div class="hs-shots" id="hsShotsNum">1</div>
+        <div class="hs-label">SHOTS</div>
+      </div>
+      <div style="width:1px;height:30px;background:var(--border)"></div>
+      <div>
+        <div class="hs-result" id="hsResult">—</div>
+        <div class="hs-label">RESULT</div>
+      </div>
+      <div id="hsFor" class="hs-for"></div>
+    </div>
+    <!-- Result marker (to mark hole as finished) -->
+    <div class="clbl">标记完成 / 选择本洞结果</div>
+    <div class="res-row">
+      <button class="res-btn" data-r="ace"    onclick="markResult('ace')">Ace</button>
+      <button class="res-btn" data-r="eagle"  onclick="markResult('eagle')">Eagle</button>
+      <button class="res-btn" data-r="birdie" onclick="markResult('birdie')">Birdie</button>
+      <button class="res-btn" data-r="par"    onclick="markResult('par')">Par</button>
+      <button class="res-btn" data-r="bogey"  onclick="markResult('bogey')">Bogey</button>
+      <button class="res-btn" data-r="double" onclick="markResult('double')">Dbl</button>
+      <button class="res-btn" data-r="worse"  onclick="markResult('worse')">+3</button>
+    </div>
+  </div>
+
+  <!-- Row 4: Actions + Export -->
+  <div class="csec">
+    <div class="act-row">
+      <button class="btn-next" onclick="nextShot()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        NEXT SHOT
+      </button>
+      <button class="btn-undo" id="btnUndo" onclick="undoShot()" disabled>
+        <span style="font-size:16px;line-height:1">↩</span>
+        <span style="font-size:8px;letter-spacing:.5px">UNDO</span>
+      </button>
+      <button class="btn-newhole" onclick="newHole()">
+        <span style="font-size:14px">⛳</span>
+        <span style="font-size:8px;letter-spacing:.8px">NEW HOLE</span>
+      </button>
+      <button class="btn-prev" onclick="prevHole()">
+        <span style="font-size:14px">←</span>
+        <span style="font-size:8px;letter-spacing:.3px">PREV</span>
+      </button>
+    </div>
+    <div class="exp-row">
+      <button class="btn-export" id="btnExp" onclick="doExport()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        导出 EXPORT PNG
+      </button>
+      <button class="fmt-btn on" id="fmtT" onclick="setFmt('transparent')">透明</button>
+      <button class="fmt-btn"    id="fmtB" onclick="setFmt('black')">黑底</button>
+      <select class="res-sel" id="resSel">
+        <option value="2160" selected>4K (2160p)</option>
+        <option value="1080">1080p</option>
+        <option value="1440">1440p</option>
+      </select>
+      <span class="exp-fb" id="expFb"></span>
+    </div>
+  </div>
+
+</div><!-- /ctrl -->
+
+<!-- ═══════════════ STATUS BAR ═══════════════ -->
+<div class="sbar">
+  <div class="live"></div>
+  <span id="sbText">Hole 1 · Par 4 · Shot 1</span>
+  <span style="margin-left:auto;font-size:9px;opacity:.35;white-space:nowrap">N=下一杆 · U=撤销 · [=上一洞 · Enter=导出</span>
+  <span id="sbLS" style="font-size:9px;opacity:.35;margin-left:6px">LS✓</span>
+</div>
+
+</div><!-- /app -->
+
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+'use strict';
+/* ══════════════════════════════════════════════════════════
+   SCHEMA VERSION
+══════════════════════════════════════════════════════════ */
+const SCHEMA = 5;
+
+/* ══════════════════════════════════════════════════════════
+   OVERLAY DESIGN TOKENS (Masters broadcast palette)
+   These mirror the CSS variables but are used in Canvas renderer.
+══════════════════════════════════════════════════════════ */
+const TH = {
+  /* Colors */
+  green:      '#1B5E3B',
+  greenDark:  '#164d30',
+  gold:       '#B8962E',
+  white:      '#FFFFFF',
+  bg:         '#F8F8F8',
+  bg2:        '#EEEEEE',
+  txt:        '#111111',
+  txt2:       '#555555',
+  txt3:       '#888888',
+  border:     '#D0D0D0',
+  pipCurr:    '#1B5E3B',
+  pipDone:    '#999999',
+  pipTodo:    '#DEDEDE',
+  resBadgeBg: '#1B5E3B',
+  resBadgeFg: '#FFFFFF',
+  /* Overlay dimensions — logical px @ 1080p scale=1 */
+  W:     492,   /* total overlay width (was 600, right panel -1/4) */
+  colW:  108,   /* left (hole) column width */
+  H:     128,   /* total overlay height (row2 slimmed to match row3) */
+  row1H:  44,   /* player name + score row */
+  row2H:  40,   /* shot progress row (same height as row3) */
+  /* row3 = H - row1H - row2H = 44 */
+  r:       2,   /* corner radius (TV-sharp) */
+  rOuter:  4,
+  /* Font stack */
+  f: 'ui-sans-serif,system-ui,-apple-system,"SF Pro Display","Segoe UI",Helvetica,Arial,sans-serif',
+  /* Labels */
+  stLbl:  { TEE:'TEE OFF', APPROACH:'APPROACH', CHIP:'CHIP', PUTT:'PUTTING' },
+  resLbl: { ace:'HOLE IN ONE', eagle:'EAGLE', birdie:'BIRDIE', par:'PAR', bogey:'BOGEY', double:'DBL BOGEY', worse:'+3' },
+};
+const OV_ROW3_H = TH.H - TH.row1H - TH.row2H; // 36
+
+/* ══════════════════════════════════════════════════════════
+   DATA MODEL
+   Round = {
+     holeNumber: 1..18 (current),
+     holePars: { 1:4, 2:3, ... }   per-hole pars
+     holes: { 1: { shots:[{type,yards},..], finished:bool, result:str|null }, ... }
+     playerName, unit, yards (current hole yards),
+     shotType, manualType,
+     showPlayer, showYards, showTotal, totalMode,
+     position, inset, customX, customY, ovScale,
+     safeOn, aspect, fmt
+   }
+══════════════════════════════════════════════════════════ */
+const PAR_DEF_YD = { 3:165, 4:385, 5:520 };
+const ASP = { '169':16/9, '916':9/16, '11':1 };
+
+const DFLT = {
+  holeNumber:  1,
+  holePars:    {},          // { holeNum: par }
+  holes:       {},          // { holeNum: HoleData }
+  playerName:  '',
+  yards:       385,
+  unit:        'YDS',
+  shotType:    'TEE',
+  manualType:  false,
+  showPlayer:  true,
+  showYards:   true,
+  showTotal:   false,
+  totalMode:   'par',       // 'gross' | 'par'
+  position:    'TR',
+  inset:       48,
+  customX:     null,
+  customY:     null,
+  ovScale:     1.0,
+  safeOn:      false,
+  aspect:      '169',
+  fmt:         'transparent',
+};
+
+// HoleData shape
+function newHoleData(par){
+  return { par, shots:[], finished:false, result:null };
+}
+
+let S = deepClone(DFLT);
+
+/* ── Derived helpers ── */
+function holePar(h){ return (S.holePars[h] || 4); }
+function holeData(h){
+  if(!S.holes[h]) S.holes[h] = newHoleData(holePar(h));
+  return S.holes[h];
+}
+function curHole(){ return holeData(S.holeNumber); }
+function curShots(){ return curHole().shots.length || 1; } // never show 0
+function curPar(){   return holePar(S.holeNumber); }
+
+function derivedResult(shots, par){
+  const d = shots - par;
+  if(shots === 1 && d <= -2) return 'ace';
+  if(d <= -2) return 'eagle';
+  if(d === -1) return 'birdie';
+  if(d === 0)  return 'par';
+  if(d === 1)  return 'bogey';
+  if(d === 2)  return 'double';
+  return 'worse';
+}
+
+function forWhatLabel(shots, par){
+  // "If this putt goes in, what result?"
+  const d = shots - par;
+  if(d <= -2) return 'FOR EAGLE';
+  if(d === -1) return 'FOR BIRDIE';
+  if(d === 0)  return 'FOR PAR';
+  if(d === 1)  return 'FOR BOGEY';
+  return 'FOR +' + Math.max(2, d);
+}
+
+function roundTotals(){
+  // Only finished holes count
+  let gross = 0, toPar = 0, count = 0;
+  for(let h=1; h<=18; h++){
+    const hd = S.holes[h];
+    if(hd && hd.finished && hd.shots.length > 0){
+      const s = hd.shots.length;
+      const p = hd.par;
+      gross += s; toPar += (s - p); count++;
+    }
+  }
+  return { gross, toPar, count };
+}
+
+function inferType(par, shotIdx){
+  if(shotIdx === 1) return 'TEE';
+  if(shotIdx - par >= 0) return 'PUTT';
+  if(par === 3) return 'PUTT';
+  if(par === 4) return shotIdx === 2 ? 'APPROACH' : 'PUTT';
+  if(par === 5){ if(shotIdx===2) return 'APPROACH'; if(shotIdx===3) return 'CHIP'; return 'PUTT'; }
+  return 'TEE';
+}
+
+/* ── Deep clone ── */
+function deepClone(o){ return JSON.parse(JSON.stringify(o)); }
+
+/* ══════════════════════════════════════════════════════════
+   UNDO STACK — per-hole isolated (KEY FIX)
+   Stores only hole-level snapshot, NOT entire S.
+   This prevents undo from wiping other holes' data.
+   Snapshot = { holeData, shotType, manualType, yards }
+══════════════════════════════════════════════════════════ */
+const undoStacks = {}; // { holeNum: [holeSnapshots...] }
+function pushUndo(){
+  const h = S.holeNumber;
+  if(!undoStacks[h]) undoStacks[h] = [];
+  undoStacks[h].push({
+    holeData:   deepClone(holeData(h)),
+    shotType:   S.shotType,
+    manualType: S.manualType,
+    yards:      S.yards,
+  });
+  if(undoStacks[h].length > 60) undoStacks[h].shift();
+}
+function canUndo(){
+  const stack = undoStacks[S.holeNumber];
+  return stack && stack.length > 0;
+}
+
+/* ══════════════════════════════════════════════════════════
+   PERSISTENCE
+══════════════════════════════════════════════════════════ */
+let _saveT = null;
+function queueSave(){ clearTimeout(_saveT); _saveT = setTimeout(persistState, 350); }
+function persistState(){
+  try {
+    localStorage.setItem('golf_ov5', JSON.stringify({...S, _v:SCHEMA}));
+    el('sbLS').textContent = 'LS✓';
+  } catch(e){ el('sbLS').textContent = 'LS✗'; }
+}
+function loadState(){
+  try {
+    const raw = localStorage.getItem('golf_ov5');
+    if(raw){
+      const d = JSON.parse(raw);
+      if(d._v === SCHEMA){
+        S = {...DFLT, ...d};
+        // Ensure holes object integrity
+        if(!S.holes) S.holes = {};
+        if(!S.holePars) S.holePars = {};
+      }
+    }
+  } catch(e){}
+}
+
+/* ── Ref image ── */
+let refImg=null, refVisible=true, refOpacity=0.5, refScaleMod=1;
+let refOffX=0, refOffY=0;
+
+/* ── Yards long-press ── */
+let _adjT=null, _adjF=null;
+function startAdj(d){
+  adjYards(d);
+  _adjT = setTimeout(()=>{ _adjF = setInterval(()=>adjYards(d), 80); }, 400);
+}
+function stopAdj(){ clearTimeout(_adjT); clearInterval(_adjF); }
+function adjYards(d){ inpYards(Math.max(0,Math.min(700,(S.yards||0)+d))); }
+
+/* ══════════════════════════════════════════════════════════
+   ACTIONS
+══════════════════════════════════════════════════════════ */
+// commitShot: for shot-related actions that should be undoable
+function commit(fn){
+  pushUndo();
+  fn();
+  syncHoleFromState();
+  queueSave(); render();
+}
+// commitNav: for navigation actions — no undo push, just navigate
+function commitNav(fn){
+  fn();
+  syncHoleFromState();
+  queueSave(); render();
+}
+
+// Ensure current hole data is initialised with current par
+function syncHoleFromState(){
+  const hd = curHole();
+  hd.par = curPar(); // always keep par in sync
+}
+
+function nextShot(){
+  commit(()=>{
+    const hd = curHole();
+    const nextIdx = hd.shots.length + 1;
+    const type = S.manualType ? S.shotType : inferType(curPar(), nextIdx);
+    hd.shots.push({ type, yards: S.yards });
+    S.shotType = type;
+    S.manualType = false;
+    // If hole was finished, adding a shot un-finishes it
+    if(hd.finished){ hd.finished = false; hd.result = null; }
+  });
+}
+
+function undoShot(){
+  if(!canUndo()) return;
+  const h = S.holeNumber;
+  const snap = undoStacks[h].pop();
+  // Restore ONLY this hole's data + per-hole UI state
+  // Other holes' data is untouched
+  S.holes[h]    = snap.holeData;
+  S.shotType    = snap.shotType;
+  S.manualType  = snap.manualType;
+  S.yards       = snap.yards;
+  syncHoleFromState();
+  queueSave(); render();
+}
+
+function newHole(){
+  commitNav(()=>{
+    const next = S.holeNumber >= 18 ? 1 : S.holeNumber + 1;
+    S.holeNumber = next;
+    const hd = curHole();
+    S.yards = PAR_DEF_YD[curPar()] || 385;
+    // Restore shotType from last recorded shot, or TEE
+    S.shotType = (hd.shots.length > 0) ? hd.shots[hd.shots.length-1].type : 'TEE';
+    S.manualType = false;
+  });
+  requestAnimationFrame(()=>{
+    const btn = el('hcard_' + S.holeNumber);
+    if(btn) btn.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+  });
+}
+
+function prevHole(){
+  commitNav(()=>{
+    const prev = S.holeNumber <= 1 ? 1 : S.holeNumber - 1;
+    S.holeNumber = prev;
+    const hd = curHole();
+    S.yards = PAR_DEF_YD[curPar()] || 385;
+    S.shotType = (hd.shots.length > 0) ? hd.shots[hd.shots.length-1].type : 'TEE';
+    S.manualType = false;
+  });
+  requestAnimationFrame(()=>{
+    const btn = el('hcard_' + S.holeNumber);
+    if(btn) btn.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+  });
+}
+
+function clickHole(h){
+  if(h === S.holeNumber) return;
+  commitNav(()=>{
+    S.holeNumber = h;
+    const hd = curHole();
+    S.yards = PAR_DEF_YD[curPar()] || 385;
+    // Restore shotType from last recorded shot of target hole, or TEE
+    S.shotType = (hd.shots.length > 0) ? hd.shots[hd.shots.length-1].type : 'TEE';
+    S.manualType = false;
+  });
+  requestAnimationFrame(()=>{
+    const btn = el('hcard_' + h);
+    if(btn) btn.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+  });
+}
+
+function markResult(r){
+  commit(()=>{
+    const hd = curHole();
+    if(hd.result === r){
+      // Toggle off (un-finish)
+      hd.finished = false; hd.result = null;
+    } else {
+      hd.result = r; hd.finished = true;
+      // Auto-add missing shots if none recorded yet
+      if(hd.shots.length === 0){
+        const targetStrokes = calcStrokesFromResult(r, curPar());
+        for(let i=0;i<targetStrokes;i++){
+          const type = S.manualType && i===targetStrokes-1 ? S.shotType : inferType(curPar(), i+1);
+          hd.shots.push({ type, yards: S.yards });
+        }
+        S.shotType = hd.shots[hd.shots.length-1].type;
+      }
+    }
+  });
+}
+
+function calcStrokesFromResult(r, par){
+  const map = {ace:1, eagle:Math.max(1,par-2), birdie:par-1, par, bogey:par+1, double:par+2, worse:par+3};
+  return map[r] || par;
+}
+
+function confirmReset(){
+  if(confirm('确认清空本轮所有数据？\nReset all round data?')){
+    S = deepClone(DFLT);
+    // Clear all per-hole undo stacks
+    Object.keys(undoStacks).forEach(k => delete undoStacks[k]);
+    queueSave(); render();
+  }
+}
+
+function quickNewRound(){
+  if(confirm('开始新一场比赛？当前所有数据将被清空。\nStart a new round? All data will be cleared.')){
+    S = deepClone(DFLT);
+    Object.keys(undoStacks).forEach(k => delete undoStacks[k]);
+    queueSave(); render();
+    // Brief visual feedback
+    const btn = document.querySelector('.btn-new-round');
+    if(btn){ btn.textContent='✓ 已重置'; setTimeout(()=>{ btn.textContent='⊕ NEW'; },1500); }
+  }
+}
+
+/* ── Input handlers ── */
+function onPlayerInput(v){ S.playerName = v; queueSave(); render(); }
+function inpYards(v){
+  const n = parseInt(v); if(isNaN(n)) return;
+  S.yards = Math.max(0, Math.min(700, n));
+  el('inYards').value = S.yards;
+  queueSave(); render();
+}
+function setCurPar(p){
+  commit(()=>{
+    S.holePars[S.holeNumber] = p;
+    S.yards = PAR_DEF_YD[p] || 385;
+    holeData(S.holeNumber).par = p;
+  });
+}
+function setST(t){ S.shotType=t; S.manualType=true; queueSave(); render(); }
+function setAsp(a){ S.aspect=a; queueSave(); render(); }
+function setUnit(u){ S.unit=u; queueSave(); render(); }
+function setPos(p){ S.position=p; S.customX=null; S.customY=null; queueSave(); render(); }
+function setInset(v){ S.inset=Math.max(0,Math.min(240,parseInt(v)||0)); queueSave(); render(); }
+function setFmt(f){ S.fmt=f; queueSave(); render(); }
+function toggleSafe(){ S.safeOn=!S.safeOn; queueSave(); render(); }
+function setTotalMode(m){ S.totalMode=m; queueSave(); render(); }
+function setOvSc(s,bid){
+  S.ovScale=s; queueSave(); render();
+  ['scSm','scMd','scLg'].forEach(id=>el(id).classList.toggle('on',id===bid));
+}
+function tog(key){ S[key]=!S[key]; queueSave(); render(); }
+function setHolePar(h,p){ S.holePars[h]=p; if(S.holes[h]) S.holes[h].par=p; queueSave(); render(); }
+
+/* ── Ref image ── */
+function loadRef(input){
+  const file=input.files[0]; if(!file) return;
+  if(refImg&&refImg._url) URL.revokeObjectURL(refImg._url);
+  const url=URL.createObjectURL(file);
+  const img=new Image();
+  img.onload=()=>{
+    refImg=img; refImg._url=url;
+    refOffX=0; refOffY=0; refScaleMod=1; refVisible=true;
+    // Only show Clear in drawer; no buttons on canvas
+    el('btnClrRef').style.display='';
+    el('refSettings').style.display='flex';
+    el('canvasWrap').classList.add('has-ref');
+    el('btnRefVis').textContent='Hide';
+    render();
+  };
+  img.src=url; input.value='';
+}
+function clearRef(){
+  if(refImg&&refImg._url) URL.revokeObjectURL(refImg._url);
+  refImg=null;
+  el('btnClrRef').style.display='none';
+  el('refSettings').style.display='none';
+  el('canvasWrap').classList.remove('has-ref');
+  render();
+}
+function setRefOp(v){ refOpacity=parseFloat(v)/100; el('refOpVal').textContent=v+'%'; render(); }
+function resetRef(){ refOffX=0; refOffY=0; refScaleMod=1; render(); }
+function toggleRefVis(){ refVisible=!refVisible; el('btnRefVis').textContent=refVisible?'Hide':'Show'; render(); }
+
+function openDrawer()  { el('drawer').classList.add('open'); }
+function closeDrawer() { el('drawer').classList.remove('open'); }
+function el(id){ return document.getElementById(id); }
+function pad(n){ return String(n).padStart(2,'0'); }
+
+/* ══════════════════════════════════════════════════════════
+   OVERLAY RENDERER
+   Masters broadcast style:
+   - Left column: green block, HOLE number + PAR
+   - Right panel (3 rows):
+       Row1: Player name
+       Row2: TO PIN yardage | shot context OR result badge
+       Row3: Shot progress pips
+   All rendering via Canvas, preview+export share same function.
+══════════════════════════════════════════════════════════ */
+
+/* ── Path helpers ── */
+function rrect(ctx,x,y,w,h,r){
+  r=Math.min(r,Math.min(w,h)/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+}
+function rrectSel(ctx,x,y,w,h,r,corners){
+  // corners: {tl,tr,br,bl}
+  const tl=corners.tl?r:0,tr=corners.tr?r:0,br=corners.br?r:0,bl=corners.bl?r:0;
+  ctx.beginPath();
+  ctx.moveTo(x+tl,y);
+  ctx.lineTo(x+w-tr,y); if(tr) ctx.arcTo(x+w,y,x+w,y+tr,r); else ctx.lineTo(x+w,y);
+  ctx.lineTo(x+w,y+h-br); if(br) ctx.arcTo(x+w,y+h,x+w-br,y+h,r); else ctx.lineTo(x+w,y+h);
+  ctx.lineTo(x+bl,y+h); if(bl) ctx.arcTo(x,y+h,x,y+h-bl,r); else ctx.lineTo(x,y+h);
+  ctx.lineTo(x,y+tl); if(tl) ctx.arcTo(x,y,x+tl,y,r); else ctx.lineTo(x,y);
+  ctx.closePath();
+}
+
+function drawOverlay(ctx, cfg){
+  const { scale:sc, ox, oy } = cfg;
+
+  const hd       = holeData(S.holeNumber);
+  const par      = hd.par;
+  const shots    = Math.max(1, hd.shots.length);
+  const finished = hd.finished;
+  const result   = hd.result;
+  const isPutt   = S.shotType === 'PUTT';
+
+  const W   = TH.W  * sc;
+  const H   = TH.H  * sc;
+  const cW  = TH.colW * sc;
+  const iW  = (TH.W - TH.colW) * sc;
+  const iX  = ox + cW;
+  const R   = TH.rOuter * sc;
+  const rs  = TH.r * sc;
+  const r1H = TH.row1H * sc;
+  const r2H = TH.row2H * sc;
+  const r3H = (TH.H - TH.row1H - TH.row2H) * sc;
+  const pad = 14 * sc;
+
+  const y1 = oy;
+  const y2 = oy + r1H;
+  const y3 = oy + r1H + r2H;
+
+  /* ── 1. Left green column (hole + par) ── */
+  ctx.save();
+  rrectSel(ctx, ox, oy, cW, H, R, {tl:true,tr:false,br:false,bl:true});
+  ctx.fillStyle = TH.green; ctx.fill();
+  ctx.restore();
+
+  // Inner highlight line
+  ctx.save();
+  ctx.strokeStyle='rgba(255,255,255,0.10)'; ctx.lineWidth=1*sc;
+  rrectSel(ctx, ox+.5*sc, oy+.5*sc, cW-1*sc, H-1*sc, R, {tl:true,tr:false,br:false,bl:true});
+  ctx.stroke();
+  ctx.restore();
+
+  // "HOLE" tiny label
+  ctx.save();
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  ctx.fillStyle='rgba(255,255,255,0.48)';
+  ctx.font=`600 ${7.5*sc}px ${TH.f}`; ctx.letterSpacing=(2.5*sc)+'px';
+  ctx.fillText('HOLE', ox+cW/2, oy+11*sc);
+  ctx.restore();
+
+  // Hole number BIG
+  ctx.save();
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='#FFFFFF';
+  ctx.font=`900 ${50*sc}px ${TH.f}`; ctx.letterSpacing=(-1*sc)+'px';
+  ctx.fillText(String(S.holeNumber), ox+cW/2, oy+H*0.46);
+  ctx.restore();
+
+  // PAR x (gold, visible)
+  ctx.save();
+  ctx.textAlign='center'; ctx.textBaseline='bottom';
+  ctx.fillStyle=TH.gold;
+  ctx.font=`700 ${12*sc}px ${TH.f}`; ctx.letterSpacing=(1.5*sc)+'px';
+  ctx.fillText('PAR '+par, ox+cW/2, oy+H-9*sc);
+  ctx.restore();
+
+  /* ── 2. Right info panel (white bg) ── */
+  ctx.save();
+  rrectSel(ctx, iX, oy, iW, H, R, {tl:false,tr:true,br:true,bl:false});
+  ctx.fillStyle = TH.bg; ctx.fill();
+  ctx.strokeStyle = TH.border; ctx.lineWidth = 1*sc;
+  rrectSel(ctx, iX+.5*sc, oy+.5*sc, iW-1*sc, H-1*sc, R, {tl:false,tr:true,br:true,bl:false});
+  ctx.stroke();
+  ctx.restore();
+
+  /* Row 2 background = Masters green (like the reference image middle green bar) */
+  ctx.save();
+  ctx.fillStyle = TH.green;
+  ctx.fillRect(iX, y2, iW, r2H);
+  ctx.restore();
+
+  // Row dividers
+  ctx.fillStyle = TH.border;
+  ctx.fillRect(iX, y2, iW, 1*sc);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(iX, y3, iW, 1*sc);
+
+  /* ── Row 1: Player name (left) + Score block (right, optional) ── */
+  // Player name — large and bold like the reference
+  const pName = S.showPlayer && S.playerName ? S.playerName.toUpperCase() : '';
+  if(pName){
+    ctx.save();
+    ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.fillStyle = TH.txt;
+    ctx.font=`800 ${19*sc}px ${TH.f}`; ctx.letterSpacing=(0.5*sc)+'px';
+    // Truncate if too long (score block takes space)
+    const maxW = S.showTotal ? iW - 80*sc - pad : iW - pad*2;
+    let drawn = pName;
+    ctx.font=`800 ${19*sc}px ${TH.f}`;
+    while(ctx.measureText(drawn).width > maxW && drawn.length > 1) drawn = drawn.slice(0,-1);
+    if(drawn !== pName) drawn = drawn.slice(0,-1) + '…';
+    ctx.fillText(drawn, iX+pad, y1+r1H/2);
+    ctx.restore();
+  }
+
+  // Score block (red block, right side of Row 1) — only if showTotal ON
+  if(S.showTotal){
+    const { toPar, gross, count } = roundTotals();
+    const scoreStr = S.totalMode==='gross'
+      ? (count>0 ? String(gross) : 'E')
+      : (count===0 ? 'E' : toPar===0 ? 'E' : toPar>0 ? '+'+toPar : String(toPar));
+    // Score block color: red=under par, green=over par, gray=even, red=gross
+    let blockColor;
+    if(S.totalMode==='gross'){
+      blockColor = '#333333'; // neutral dark for raw score
+    } else if(count === 0 || toPar === 0){
+      blockColor = '#555555'; // neutral gray for E (even)
+    } else if(toPar < 0){
+      blockColor = '#C0392B'; // red for under par (good)
+    } else {
+      blockColor = '#2c7a3a'; // green for over par (bad)
+    }
+    ctx.save();
+    ctx.font=`800 ${18*sc}px ${TH.f}`; ctx.letterSpacing='0px';
+    const sw = ctx.measureText(scoreStr).width;
+    const sbH = r1H - 6*sc;
+    const sbPad = 10*sc;
+    const sbW = Math.max(sw + sbPad*2, 42*sc);
+    const sbX = iX + iW - pad - sbW + pad/2;
+    const sbY = y1 + 3*sc;
+    rrect(ctx, sbX, sbY, sbW, sbH, rs);
+    ctx.fillStyle = blockColor; ctx.fill();
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(scoreStr, sbX+sbW/2, sbY+sbH/2);
+    ctx.restore();
+  }
+
+  /* ── Row 2: Green bar — shot progress ONLY (same style as Row3 pips) ── */
+  const r2mid = y2 + r2H/2;
+  const r2pad = 14*sc;
+
+  ctx.save();
+  const pipMax = Math.max(par, shots);
+  // Same sizing as Row3 context block — centered in the green bar
+  const pipW = 26*sc, pipH = 26*sc, pipG = 5*sc;
+  const totalPW = pipMax*(pipW+pipG) - pipG;
+  // Center the whole pip row horizontally
+  let sx = iX + (iW - totalPW) / 2;
+  const sy = r2mid - pipH/2;
+
+  for(let i=1; i<=pipMax; i++){
+    const isCurr = i===shots;
+    const isDone = i<shots;
+    if(isCurr){
+      // Current: white filled block, green number — matches Row3 badge style
+      rrect(ctx, sx, sy, pipW, pipH, 3*sc);
+      ctx.fillStyle='#FFFFFF'; ctx.fill();
+      ctx.font=`800 ${15*sc}px ${TH.f}`; ctx.letterSpacing='0px';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle=TH.green;
+      ctx.fillText(String(i), sx+pipW/2, sy+pipH/2+.5*sc);
+    } else if(isDone){
+      // Done: semi-white block
+      rrect(ctx, sx, sy, pipW, pipH, 3*sc);
+      ctx.fillStyle='rgba(255,255,255,0.25)'; ctx.fill();
+      ctx.font=`700 ${15*sc}px ${TH.f}`; ctx.letterSpacing='0px';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle='rgba(255,255,255,0.85)';
+      ctx.fillText(String(i), sx+pipW/2, sy+pipH/2+.5*sc);
+    } else {
+      // Todo: faint number, no box
+      ctx.font=`600 ${15*sc}px ${TH.f}`; ctx.letterSpacing='0px';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle='rgba(255,255,255,0.28)';
+      ctx.fillText(String(i), sx+pipW/2, sy+pipH/2+.5*sc);
+    }
+    sx += pipW+pipG;
+  }
+  ctx.restore();
+
+  /* ── Row 3: FOR BIRDIE / context — white bg, green text, prominent ── */
+  const r3mid = y3 + r3H/2;
+
+  ctx.save();
+  // Draw white background for row3
+  // (already white from the outer panel)
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+
+  if(finished && result){
+    // Result badge: green bg white text box
+    const rl = TH.resLbl[result] || result.toUpperCase();
+    ctx.font=`800 ${15*sc}px ${TH.f}`; ctx.letterSpacing=(2*sc)+'px';
+    const tw = ctx.measureText(rl).width;
+    const bH = r3H - 8*sc, bPad = 14*sc;
+    const bW = tw + bPad*2;
+    const bX = iX + (iW - bW)/2;
+    const bY = y3 + 4*sc;
+    rrect(ctx, bX, bY, bW, bH, rs);
+    ctx.fillStyle = TH.resBadgeBg; ctx.fill();
+    ctx.fillStyle = TH.resBadgeFg;
+    ctx.fillText(rl, bX+bW/2, bY+bH/2);
+  } else {
+    // Context: "FOR BIRDIE" style — large green bold text, centered
+    let ctxTxt;
+    if(isPutt) ctxTxt = forWhatLabel(shots, par);
+    else ctxTxt = TH.stLbl[S.shotType] || S.shotType;
+    ctx.fillStyle = TH.green;
+    ctx.font=`800 ${15*sc}px ${TH.f}`; ctx.letterSpacing=(2.5*sc)+'px';
+    ctx.fillText(ctxTxt, iX + iW/2, r3mid);
+  }
+  ctx.restore();
+}
+
+/* ── Safe zones ── */
+function drawSafeZones(ctx,cW,cH){
+  if(!S.safeOn) return;
+  ctx.save();
+  ctx.setLineDash([5,4]); ctx.lineWidth=1;
+  const ax=cW*.05,ay=cH*.05;
+  ctx.strokeStyle='rgba(255,200,0,.3)';
+  ctx.strokeRect(ax,ay,cW-ax*2,cH-ay*2);
+  ctx.setLineDash([]);
+  ctx.fillStyle='rgba(255,200,0,.45)';
+  ctx.font='9px system-ui'; ctx.letterSpacing='1px';
+  ctx.textAlign='left'; ctx.textBaseline='top';
+  ctx.fillText('ACTION SAFE',ax+4,ay+3);
+  ctx.setLineDash([5,4]);
+  const tx=cW*.1,ty=cH*.1;
+  ctx.strokeStyle='rgba(255,140,0,.2)'; ctx.strokeRect(tx,ty,cW-tx*2,cH-ty*2);
+  ctx.setLineDash([]);
+  ctx.fillStyle='rgba(255,140,0,.4)';
+  ctx.fillText('TITLE SAFE',tx+4,ty+3);
+  ctx.restore();
+}
+
+/* ══════════════════════════════════════════════════════════
+   PREVIEW STAGE
+══════════════════════════════════════════════════════════ */
+const canvas = el('pcanvas');
+const ctx2   = canvas.getContext('2d');
+
+function getCanvasSize(){
+  const area = el('previewArea');
+  const wW=area.clientWidth, wH=area.clientHeight;
+  const ratio=ASP[S.aspect]||(16/9);
+  let cW,cH;
+  if(wW/wH>ratio){ cH=wH; cW=Math.round(cH*ratio); }
+  else            { cW=wW; cH=Math.round(cW/ratio); }
+  return {cW:Math.max(cW,100), cH:Math.max(cH,60)};
+}
+function ovScaleFor(cW){ return Math.max(.2,Math.min(4,(cW/1920)*(S.ovScale||1.0))); }
+function ovPosFor(cW,cH,sc){
+  const ovW=TH.W*sc, ovH=TH.H*sc;
+  const i=(S.inset||48)*(cW/1920);
+  if(S.position==='custom'&&S.customX!=null)
+    return {x:S.customX*cW,y:S.customY*cH,ovW,ovH};
+  switch(S.position){
+    case 'TR': return {x:cW-ovW-i,y:i,ovW,ovH};
+    case 'TL': return {x:i,y:i,ovW,ovH};
+    case 'BL': return {x:i,y:cH-ovH-i,ovW,ovH};
+    case 'BR': return {x:cW-ovW-i,y:cH-ovH-i,ovW,ovH};
+    case 'C':  return {x:(cW-ovW)/2,y:(cH-ovH)/2,ovW,ovH};
+    default:   return {x:cW-ovW-i,y:i,ovW,ovH};
+  }
+}
+
+function render(){
+  const {cW,cH}=getCanvasSize();
+  const dpr=Math.min(window.devicePixelRatio||1, 2.5);
+  canvas.width=cW*dpr; canvas.height=cH*dpr;
+  canvas.style.width=cW+'px'; canvas.style.height=cH+'px';
+  el('canvasWrap').style.width=cW+'px';
+  el('canvasWrap').style.height=cH+'px';
+
+  const ctx=ctx2;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+
+  // Stage bg
+  ctx.fillStyle='#060c16'; ctx.fillRect(0,0,cW,cH);
+
+  // Aspect watermark
+  ctx.fillStyle='rgba(255,255,255,.015)';
+  ctx.font=`700 ${Math.round(cH*.033)}px system-ui`; ctx.letterSpacing='5px';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText({169:'16:9',916:'9:16',11:'1:1'}[S.aspect]||'',cW/2,cH/2);
+
+  // Ref image
+  if(refImg&&refVisible){
+    ctx.save(); ctx.globalAlpha=refOpacity;
+    const iw=refImg.naturalWidth,ih=refImg.naturalHeight;
+    const scR=Math.max(cW/iw,cH/ih)*refScaleMod;
+    ctx.drawImage(refImg,(cW-iw*scR)/2+refOffX,(cH-ih*scR)/2+refOffY,iw*scR,ih*scR);
+    ctx.restore();
+  }
+
+  // Overlay
+  const sc=ovScaleFor(cW);
+  let {x:ox,y:oy,ovW,ovH}=ovPosFor(cW,cH,sc);
+  ox=Math.max(0,Math.min(cW-ovW,ox));
+  oy=Math.max(0,Math.min(cH-ovH,oy));
+  // Preview shadow
+  ctx.save();
+  ctx.shadowColor='rgba(0,0,0,.4)'; ctx.shadowBlur=20*sc; ctx.shadowOffsetY=5*sc;
+  ctx.fillStyle='rgba(0,0,0,.001)';
+  rrect(ctx,ox,oy,ovW,ovH,TH.rOuter*sc); ctx.fill();
+  ctx.restore();
+  drawOverlay(ctx,{scale:sc,ox,oy});
+  drawSafeZones(ctx,cW,cH);
+  syncUI();
+}
+
+/* ══════════════════════════════════════════════════════════
+   EXPORT
+══════════════════════════════════════════════════════════ */
+function doExport(){
+  const resH=parseInt(el('resSel').value)||2160;
+  const ratio=ASP[S.aspect]||(16/9);
+  const expW=Math.round(resH*ratio), expH=resH;
+  const ec=document.createElement('canvas');
+  ec.width=expW; ec.height=expH;
+  const ectx=ec.getContext('2d');
+  if(S.fmt==='black'){ ectx.fillStyle='#000'; ectx.fillRect(0,0,expW,expH); }
+  const sc=ovScaleFor(expW);
+  let {x:ox,y:oy,ovW,ovH}=ovPosFor(expW,expH,sc);
+  ox=Math.max(0,Math.min(expW-ovW,ox));
+  oy=Math.max(0,Math.min(expH-ovH,oy));
+  drawOverlay(ectx,{scale:sc,ox,oy});
+  const hd=holeData(S.holeNumber);
+  const ts=S.shotType.toLowerCase();
+  const rs=hd.result?'_'+hd.result:'';
+  const fn=`hole${pad(S.holeNumber)}_shot${pad(hd.shots.length||1)}_${ts}${rs}_${resH}p.png`;
+  const a=document.createElement('a');
+  a.download=fn; a.href=ec.toDataURL('image/png'); a.click();
+  const fb=el('expFb');
+  fb.textContent='✓ '+fn; fb.classList.add('on');
+  el('btnExp').disabled=true;
+  setTimeout(()=>{ fb.classList.remove('on'); el('btnExp').disabled=false; },3000);
+}
+
+/* ══════════════════════════════════════════════════════════
+   UI SYNC
+══════════════════════════════════════════════════════════ */
+function syncUI(){
+  const hd = holeData(S.holeNumber);
+  const par = hd.par;
+  const shots = hd.shots.length || 1;
+  const finished = hd.finished;
+  const result = hd.result;
+
+  // Inputs
+  el('inPlayer').value = S.playerName;
+  el('inYards').value  = S.yards;
+  el('insetIn').value  = S.inset;
+  el('unitTag').textContent = S.unit;
+  el('yardsLbl').textContent = (S.unit==='M'?'Metres':'Yds');
+
+  // To pin visibility
+  el('chkYards').classList.toggle('on', S.showYards);
+  const yardsSpinRow = el('yardsSpinRow');
+  if(yardsSpinRow) yardsSpinRow.style.opacity = S.showYards ? '1' : '0.3';
+
+  // Par buttons
+  document.querySelectorAll('.par-btn').forEach(b=>
+    b.classList.toggle('on', parseInt(b.getAttribute('data-p'))===par));
+
+  // Shot type buttons
+  document.querySelectorAll('.st-btn').forEach(b=>
+    b.className='st-btn'+(b.getAttribute('data-st')===S.shotType?' on-'+S.shotType:''));
+
+  // Auto tag
+  el('autoTag').style.opacity = S.manualType?'.25':'1';
+
+  // Undo button
+  el('btnUndo').disabled = !canUndo();
+
+  // Hole status panel
+  el('hsShotsNum').textContent = hd.shots.length > 0 ? hd.shots.length : '—';
+  const autoRes = hd.shots.length > 0 ? derivedResult(shots, par) : null;
+  const hsRes = el('hsResult');
+  if(finished && result){
+    hsRes.textContent = TH.resLbl[result] || result.toUpperCase();
+    hsRes.className = 'hs-result ' + result;
+  } else if(autoRes){
+    hsRes.textContent = (TH.resLbl[autoRes]||autoRes).replace('HOLE IN ONE','ACE');
+    hsRes.className = 'hs-result ' + autoRes;
+  } else {
+    hsRes.textContent = '—';
+    hsRes.className = 'hs-result';
+  }
+  el('finishedTag').textContent = finished ? '✓ 已完成' : '记录中…';
+  el('finishedTag').style.color = finished ? '#3dc97a' : 'rgba(255,255,255,.3)';
+
+  // FOR xxx hint when putting (only when shots > 0)
+  const hsF = el('hsFor');
+  if(S.shotType==='PUTT' && !finished && hd.shots.length > 0){
+    hsF.textContent = forWhatLabel(shots, par);
+    hsF.style.display='';
+  } else {
+    hsF.textContent=''; hsF.style.display='none';
+  }
+
+  // Result buttons
+  document.querySelectorAll('.res-btn').forEach(b=>{
+    const r = b.getAttribute('data-r');
+    b.className='res-btn'+(r===result&&finished?' on-'+r:'');
+  });
+
+  // Display checkboxes (drawer settings)
+  el('chkPlayer').classList.toggle('on', S.showPlayer);
+  // chkYards already handled above
+  // chkTotal is in scorecard nav, handled below
+
+  // Position buttons
+  document.querySelectorAll('.pos-btn').forEach(b=>
+    b.classList.toggle('on', b.getAttribute('data-pos')===S.position));
+
+  // Aspect chips
+  ['169','916','11'].forEach(a=>el('asp'+a).classList.toggle('on',a===S.aspect));
+  el('unitYds').classList.toggle('on', S.unit==='YDS');
+  el('unitM').classList.toggle('on',   S.unit==='M');
+  el('btnSafe').classList.toggle('on', S.safeOn);
+  el('fmtT').classList.toggle('on', S.fmt==='transparent');
+  el('fmtB').classList.toggle('on', S.fmt==='black');
+
+  // Scorecard nav
+  renderScorecard();
+
+  // Status bar
+  const yd=S.unit==='M'?Math.round(S.yards*.9144)+'m':S.yards+'yd';
+  const shotDisplay = hd.shots.length > 0 ? shots : 0;
+  el('sbText').textContent=
+    `Hole ${S.holeNumber} · Par ${par} · Shot ${shotDisplay} · ${TH.stLbl[S.shotType]||S.shotType} · ${yd}`;
+}
+
+function renderScorecard(){
+  const strip=el('scHoles');
+  strip.innerHTML='';
+  for(let h=1;h<=18;h++){
+    const hd=S.holes[h];
+    const par=holePar(h);
+    const card=document.createElement('button');
+    card.id='hcard_'+h;
+    card.className='sc-hole-card'+(h===S.holeNumber?' active':'');
+    card.onclick=()=>clickHole(h);
+    card.title='Hole '+h;
+
+    const numDiv=document.createElement('div');
+    numDiv.className='sc-h-num'; numDiv.textContent=h;
+
+    const parDiv=document.createElement('div');
+    parDiv.className='sc-h-par'; parDiv.textContent='P'+par;
+
+    const valDiv=document.createElement('div');
+    valDiv.className='sc-h-strokes';
+    if(hd && hd.shots.length>0){
+      const s = hd.shots.length;
+      valDiv.textContent=s;
+      // Color code by derived result (even unfinished holes get colored)
+      const resKey = hd.finished && hd.result ? hd.result : derivedResult(s, par);
+      card.classList.add('res-'+resKey);
+    } else if(h===S.holeNumber){
+      valDiv.textContent='▶'; valDiv.style.color='var(--app-gold)';
+    } else {
+      valDiv.textContent='—';
+    }
+    card.appendChild(numDiv); card.appendChild(parDiv); card.appendChild(valDiv);
+    strip.appendChild(card);
+  }
+
+  // Round totals (finished holes only)
+  const { gross, toPar, count } = roundTotals();
+  if(count > 0){
+    el('totGross').textContent=gross;
+    const ps=toPar===0?'E':toPar>0?'+'+toPar:String(toPar);
+    el('totPar').textContent=ps;
+    el('totPar').className='sc-tot-val'+(toPar<0?' under':toPar>0?' over':'');
+  } else {
+    el('totGross').textContent='—';
+    el('totPar').textContent='—';
+    el('totPar').className='sc-tot-val';
+  }
+
+  // Sync overlay toggle state
+  el('chkTotal').classList.toggle('on', S.showTotal);
+  el('totalModeRow').style.display = S.showTotal?'flex':'none';
+  el('tmGross').classList.toggle('on', S.totalMode==='gross');
+  el('tmPar').classList.toggle('on',   S.totalMode==='par');
+}
+
+/* ── Par grid ── */
+function buildParGrid(){
+  const grid=el('parGrid'); if(!grid) return;
+  grid.innerHTML='';
+  for(let h=1;h<=18;h++){
+    const p=holePar(h);
+    const cell=document.createElement('div');
+    cell.className='par-grid-cell';
+    const lbl=document.createElement('div');
+    lbl.className='par-grid-lbl'; lbl.textContent=h;
+    const sel=document.createElement('select');
+    sel.className='par-grid-sel';
+    [3,4,5].forEach(v=>{
+      const opt=document.createElement('option');
+      opt.value=v; opt.textContent=v; if(v===p) opt.selected=true;
+      sel.appendChild(opt);
+    });
+    sel.onchange=()=>setHolePar(h,parseInt(sel.value));
+    cell.appendChild(lbl); cell.appendChild(sel);
+    grid.appendChild(cell);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   DRAG / PAN / PINCH
+══════════════════════════════════════════════════════════ */
+let _ovDrag=false,_ovDX=0,_ovDY=0;
+let _bgDrag=false,_bgX=0,_bgY=0,_bgOX=0,_bgOY=0;
+let _pt1=null,_pt2=null,_rScStart=1;
+
+function hitOv(mx,my){
+  const {cW,cH}=getCanvasSize();
+  const sc=ovScaleFor(cW);
+  const {x,y,ovW,ovH}=ovPosFor(cW,cH,sc);
+  const cx=Math.max(0,Math.min(cW-ovW,x));
+  const cy=Math.max(0,Math.min(cH-ovH,y));
+  return {hit:mx>=cx&&mx<=cx+ovW&&my>=cy&&my<=cy+ovH,cx,cy,ovW,ovH,cW,cH};
+}
+function pxy(e){
+  const r=canvas.getBoundingClientRect();
+  const s=e.touches?e.touches[0]:e;
+  return {x:s.clientX-r.left,y:s.clientY-r.top};
+}
+
+canvas.addEventListener('click',e=>e.stopPropagation());
+el('previewArea').addEventListener('click',()=>{ if(!refImg) el('refIn').click(); });
+canvas.addEventListener('mousedown',onPD);
+canvas.addEventListener('mousemove',onPM);
+canvas.addEventListener('mouseup',onPU);
+canvas.addEventListener('mouseleave',onPU);
+canvas.addEventListener('touchstart',onTD,{passive:false});
+canvas.addEventListener('touchmove',onTM,{passive:false});
+canvas.addEventListener('touchend',onPU,{passive:false});
+
+function onTD(e){
+  if(e.touches.length===2){_pt1=e.touches[0];_pt2=e.touches[1];_rScStart=refScaleMod;e.preventDefault();return;}
+  onPD(e);
+}
+function onTM(e){
+  if(e.touches.length===2&&_pt1){
+    const d0=Math.hypot(_pt2.clientX-_pt1.clientX,_pt2.clientY-_pt1.clientY);
+    const d1=Math.hypot(e.touches[1].clientX-e.touches[0].clientX,e.touches[1].clientY-e.touches[0].clientY);
+    refScaleMod=Math.max(.3,Math.min(4,_rScStart*(d1/d0)));
+    render(); e.preventDefault(); return;
+  }
+  onPM(e);
+}
+function onPD(e){
+  const {x,y}=pxy(e);
+  const {hit,cx,cy,cW,cH,ovW,ovH}=hitOv(x,y);
+  if(hit){
+    _ovDrag=true;_ovDX=x-cx;_ovDY=y-cy;
+    canvas.classList.add('ov-drag');
+    e.preventDefault&&e.preventDefault();e.stopPropagation&&e.stopPropagation();
+  } else if(refImg&&refVisible){
+    _bgDrag=true;_bgX=x;_bgY=y;_bgOX=refOffX;_bgOY=refOffY;
+    canvas.classList.add('bg-drag');
+    e.preventDefault&&e.preventDefault();e.stopPropagation&&e.stopPropagation();
+  } else {
+    e.stopPropagation&&e.stopPropagation();
+    el('refIn').click();
+  }
+}
+function onPM(e){
+  if(!_ovDrag&&!_bgDrag){
+    const{x,y}=pxy(e);canvas.classList.toggle('ov-hover',hitOv(x,y).hit);return;
+  }
+  const{x,y}=pxy(e);
+  if(_ovDrag){
+    const{cW,cH,ovW,ovH}=hitOv(0,0);
+    S.position='custom';
+    S.customX=Math.max(0,Math.min(1-ovW/cW,(x-_ovDX)/cW));
+    S.customY=Math.max(0,Math.min(1-ovH/cH,(y-_ovDY)/cH));
+    document.querySelectorAll('.pos-btn').forEach(b=>b.classList.remove('on'));
+    render();e.preventDefault&&e.preventDefault();
+  } else if(_bgDrag){
+    refOffX=_bgOX+(x-_bgX);refOffY=_bgOY+(y-_bgY);
+    render();e.preventDefault&&e.preventDefault();
+  }
+}
+function onPU(){
+  if(_ovDrag){_ovDrag=false;queueSave();}
+  _bgDrag=false;_pt1=null;
+  canvas.classList.remove('ov-drag','bg-drag','ov-hover');
+}
+
+/* ══════════════════════════════════════════════════════════
+   KEYBOARD
+══════════════════════════════════════════════════════════ */
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+  const k=e.key.toLowerCase();
+  if((k==='z'&&(e.metaKey||e.ctrlKey))||k==='u'){e.preventDefault();undoShot();}
+  else if(k==='n'||k==='arrowright') nextShot();
+  else if(k==='h') newHole();
+  else if(k==='['||k==='arrowleft') prevHole();
+  else if(k==='enter'){e.preventDefault();doExport();}
+});
+
+/* ══════════════════════════════════════════════════════════
+   INIT
+══════════════════════════════════════════════════════════ */
+loadState();
+(()=>{
+  const scMap={0.78:'scSm',1.0:'scMd',1.25:'scLg'};
+  const id=scMap[S.ovScale]||'scMd';
+  ['scSm','scMd','scLg'].forEach(i=>el(i)&&el(i).classList.toggle('on',i===id));
+})();
+buildParGrid();
+render();
+window.addEventListener('resize',()=>render());
+</script>
+</body>
+</html>
